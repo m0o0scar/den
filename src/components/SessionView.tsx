@@ -73,6 +73,7 @@ const DEFAULT_AGENT_PANE_RATIO = 0.5;
 const TERMINAL_HEADER_HEIGHT = 40;
 const TERMINAL_PANEL_RIGHT_GAP = 16;
 const TERMINAL_MINIMIZED_VISIBLE_WIDTH = 40;
+const TRIDENT_WORKSPACE_URL = 'http://localhost:3100/workspace';
 
 const clampAgentPaneRatio = (value: number): number => Math.max(0.2, Math.min(0.8, value));
 
@@ -451,6 +452,16 @@ export function SessionView({
 
         const uri = `${ide.protocol}://file/${encodeURI(worktree)}`;
         window.open(uri, '_blank');
+    };
+
+    const handleShowDiffWithTrident = () => {
+        if (!worktree || !branch) return;
+
+        const params = new URLSearchParams({
+            path: worktree,
+            branch,
+        });
+        window.open(`${TRIDENT_WORKSPACE_URL}?${params.toString()}`, '_blank', 'noopener,noreferrer');
     };
 
     const handleNewAttempt = () => {
@@ -1708,6 +1719,16 @@ export function SessionView({
                             <span className={headerButtonLabelClass}>Open</span>
                         </button>
                     </div>
+
+                    <button
+                        className="btn btn-ghost btn-xs gap-1 h-6 min-h-6"
+                        onClick={handleShowDiffWithTrident}
+                        disabled={!worktree || !branch}
+                        title="Open this worktree and branch in Trident"
+                    >
+                        <ExternalLink className="w-3 h-3" />
+                        <span className={headerButtonLabelClass}>Diff with Trident</span>
+                    </button>
 
                     <button
                         className="btn btn-ghost btn-xs gap-1 h-6 min-h-6"
