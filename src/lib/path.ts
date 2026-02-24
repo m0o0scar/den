@@ -36,3 +36,7 @@ export function getDirName(path: string): string {
   
   return withoutTrailing.substring(0, lastIdx);
 }
+
+export function isWindowsAbsolutePath(value: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(value);
+}

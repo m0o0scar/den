@@ -16,7 +16,7 @@ import { setTmuxSessionMouseMode } from '@/app/actions/git';
 import { getConfig, updateConfig } from '@/app/actions/config';
 import { Trash2, ExternalLink, Play, GitCommitHorizontal, GitMerge, GitPullRequestArrow, GitBranch, ArrowUp, ArrowDown, FolderOpen, ChevronLeft, Grip, ChevronDown, Plus, Globe, MousePointer2, ArrowLeft, ArrowRight, RotateCw } from 'lucide-react';
 import SessionFileBrowser from './SessionFileBrowser';
-import { getBaseName } from '@/lib/path';
+import { getBaseName, isWindowsAbsolutePath } from '@/lib/path';
 import { notifySessionsUpdated } from '@/lib/session-updates';
 import { buildTtydTerminalSrc } from '@/lib/terminal-session';
 
@@ -109,8 +109,6 @@ type PreviewComponentStackEntry = {
         fileName?: unknown;
     } | null;
 };
-
-const isWindowsAbsolutePath = (value: string): boolean => /^[a-zA-Z]:[\\/]/.test(value);
 
 const normalizePickerSourceFileName = (value: string): string => {
     let normalized = value.trim();
