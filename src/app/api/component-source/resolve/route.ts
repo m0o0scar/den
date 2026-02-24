@@ -140,11 +140,44 @@ const runPatternSearch = async (workspaceRoot: string, pattern: string): Promise
       .map((line) => line.trim())
       .filter(Boolean);
   } catch {
-    return [];
+    try {
+      const { stdout } = await execFileAsync('git', ['grep', '-l', '-P', pattern], {
+        cwd: workspaceRoot,
+        maxBuffer: 2 * 1024 * 1024,
+        timeout: 20000,
+      });
+
+      return stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
   }
 };
 
 const walkSourceFiles = async (workspaceRoot: string): Promise<string[]> => {
+  try {
+    const { stdout } = await execFileAsync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
+      cwd: workspaceRoot,
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 10000,
+    });
+    
+    const gitFiles = stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && SOURCE_EXTENSIONS.some((ext) => line.endsWith(ext)))
+      .map((line) => path.join(workspaceRoot, line));
+      
+    if (gitFiles.length > 0) {
+      return gitFiles;
+    }
+  } catch {
+    // Ignore git error and fallback to manual walk
+  }
+
   const files: string[] = [];
   const queue: string[] = [workspaceRoot];
 
@@ -200,24 +233,30 @@ const searchByScanningFilesForNames = async (workspaceRoot: string, componentNam
   const results = new Map<string, string[]>();
   if (nameToRegexes.size === 0) return results;
 
-  for (const absolutePath of files) {
-    try {
-      const stat = await fs.stat(absolutePath);
-      if (!stat.isFile() || stat.size > MAX_FILE_BYTES) continue;
-      const content = await fs.readFile(absolutePath, 'utf-8');
-      
-      const relativePath = path.relative(workspaceRoot, absolutePath);
-      
-      for (const [name, regexes] of nameToRegexes.entries()) {
-        if (regexes.some((regex) => regex.test(content))) {
-          const currentMatches = results.get(name) || [];
-          currentMatches.push(relativePath);
-          results.set(name, currentMatches);
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < files.length; i += BATCH_SIZE) {
+    const batch = files.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (absolutePath) => {
+        try {
+          const stat = await fs.stat(absolutePath);
+          if (!stat.isFile() || stat.size > MAX_FILE_BYTES) return;
+          const content = await fs.readFile(absolutePath, 'utf-8');
+          
+          const relativePath = path.relative(workspaceRoot, absolutePath);
+          
+          for (const [name, regexes] of nameToRegexes.entries()) {
+            if (regexes.some((regex) => regex.test(content))) {
+              const currentMatches = results.get(name) || [];
+              currentMatches.push(relativePath);
+              results.set(name, currentMatches);
+            }
+          }
+        } catch {
+          // Ignore unreadable files
         }
-      }
-    } catch {
-      // Ignore unreadable files
-    }
+      })
+    );
   }
 
   return results;
