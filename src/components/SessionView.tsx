@@ -258,6 +258,10 @@ export function SessionView({
     const splitResizeRef = useRef({ startX: 0, startRatio: DEFAULT_AGENT_PANE_RATIO });
     const agentFrameLinkCleanupRef = useRef<(() => void) | null>(null);
     const terminalFrameLinkCleanupRef = useRef<(() => void) | null>(null);
+    const terminalStartupScriptStateRef = useRef<{ injected: boolean; timer: number | null }>({
+        injected: false,
+        timer: null,
+    });
     const agentTerminalSrc = useMemo(() => buildTtydTerminalSrc(sessionName, 'agent'), [sessionName]);
     const floatingTerminalSrc = useMemo(() => buildTtydTerminalSrc(sessionName, 'terminal'), [sessionName]);
 
@@ -271,7 +275,23 @@ export function SessionView({
             agent: 'idle',
             terminal: 'idle',
         };
+        if (terminalStartupScriptStateRef.current.timer !== null) {
+            window.clearTimeout(terminalStartupScriptStateRef.current.timer);
+        }
+        terminalStartupScriptStateRef.current = {
+            injected: false,
+            timer: null,
+        };
     }, [sessionName]);
+
+    useEffect(() => {
+        return () => {
+            if (terminalStartupScriptStateRef.current.timer !== null) {
+                window.clearTimeout(terminalStartupScriptStateRef.current.timer);
+                terminalStartupScriptStateRef.current.timer = null;
+            }
+        };
+    }, []);
 
     const getTerminalBootstrapKey = useCallback((slot: TerminalBootstrapSlot) => {
         return `${TERMINAL_BOOTSTRAP_STORAGE_PREFIX}${sessionName}:${slot}`;
@@ -364,6 +384,88 @@ export function SessionView({
         }
         return false;
     }, []);
+
+    const injectTerminalStartupScript = useCallback((
+        iframe: HTMLIFrameElement,
+        win: TerminalWindow,
+        term: NonNullable<TerminalWindow['term']>
+    ): boolean => {
+        if (isResume) return false;
+
+        const script = startupScript?.trim();
+        if (!script || terminalStartupScriptStateRef.current.injected) return false;
+
+        const pressEnter = () => {
+            const textarea = iframe.contentDocument?.querySelector("textarea.xterm-helper-textarea");
+            if (textarea) {
+                textarea.dispatchEvent(new KeyboardEvent('keypress', {
+                    bubbles: true,
+                    cancelable: true,
+                    charCode: 13,
+                    keyCode: 13,
+                    key: 'Enter',
+                    view: win
+                }));
+            } else {
+                term.paste('\r');
+            }
+        };
+
+        terminalStartupScriptStateRef.current.injected = true;
+        if (terminalStartupScriptStateRef.current.timer !== null) {
+            window.clearTimeout(terminalStartupScriptStateRef.current.timer);
+        }
+        terminalStartupScriptStateRef.current.timer = window.setTimeout(() => {
+            terminalStartupScriptStateRef.current.timer = null;
+            try {
+                term.paste(script);
+                pressEnter();
+            } catch (error) {
+                terminalStartupScriptStateRef.current.injected = false;
+                console.error('Failed to inject startup script into terminal iframe:', error);
+            }
+        }, 500);
+
+        return true;
+    }, [isResume, startupScript]);
+
+    useEffect(() => {
+        if (isResume) return;
+        if (!startupScript?.trim()) return;
+        if (terminalStartupScriptStateRef.current.injected) return;
+
+        let cancelled = false;
+
+        const attemptInjection = (attempts = 0) => {
+            if (cancelled || terminalStartupScriptStateRef.current.injected) return;
+            if (attempts > 30) return;
+
+            if (!hasTerminalBootstrapped('terminal')) {
+                window.setTimeout(() => attemptInjection(attempts + 1), 200);
+                return;
+            }
+
+            const iframe = terminalRef.current;
+            if (!iframe) return;
+
+            try {
+                const win = iframe.contentWindow as TerminalWindow | null;
+                if (win?.term) {
+                    injectTerminalStartupScript(iframe, win, win.term);
+                    return;
+                }
+            } catch {
+                // Ignore transient iframe access errors and retry.
+            }
+
+            window.setTimeout(() => attemptInjection(attempts + 1), 200);
+        };
+
+        attemptInjection();
+        return () => {
+            cancelled = true;
+        };
+    }, [hasTerminalBootstrapped, injectTerminalStartupScript, isResume, startupScript]);
 
     const [feedback, setFeedback] = useState<string>('Initializing...');
     const [cleanupPhase, setCleanupPhase] = useState<CleanupPhase>('idle');
@@ -1768,6 +1870,9 @@ export function SessionView({
                         if (shouldSkipResumeInjection && !alreadyBootstrapped) {
                             markTerminalBootstrapped('terminal');
                         }
+                        if (alreadyBootstrapped) {
+                            injectTerminalStartupScript(iframe, win, term);
+                        }
                         win.focus();
                         const textarea = iframe.contentDocument?.querySelector("textarea.xterm-helper-textarea");
                         if (textarea) (textarea as HTMLElement).focus();
@@ -1807,14 +1912,7 @@ export function SessionView({
                     };
                     pressEnter();
                     markTerminalBootstrapped('terminal');
-
-                    // Check for startup script
-                    if (startupScript && !isResume) {
-                        setTimeout(() => {
-                            term.paste(startupScript);
-                            pressEnter();
-                        }, 500);
-                    }
+                    injectTerminalStartupScript(iframe, win, term);
 
                     // Focus
                     win.focus();
