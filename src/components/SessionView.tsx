@@ -262,6 +262,7 @@ export function SessionView({
     const [previewInputUrl, setPreviewInputUrl] = useState('');
     const [previewUrl, setPreviewUrl] = useState('');
     const [isPreviewPickerActive, setIsPreviewPickerActive] = useState(false);
+    const [isResolvingElement, setIsResolvingElement] = useState(false);
     const [agentPaneRatio, setAgentPaneRatio] = useState(DEFAULT_AGENT_PANE_RATIO);
     const [isSplitResizing, setIsSplitResizing] = useState(false);
 
@@ -1266,9 +1267,14 @@ export function SessionView({
                     let finalIdentifier = componentReference || '';
 
                     if (!finalIdentifier && stackComponentNames.length > 0) {
-                        const result = await resolveComponentSourcePathByNames(stackComponentNames);
-                        if (result?.resolvedName && result?.sourcePath) {
-                            finalIdentifier = `${result.resolvedName} (${result.sourcePath})`;
+                        setIsResolvingElement(true);
+                        try {
+                            const result = await resolveComponentSourcePathByNames(stackComponentNames);
+                            if (result?.resolvedName && result?.sourcePath) {
+                                finalIdentifier = `${result.resolvedName} (${result.sourcePath})`;
+                            }
+                        } finally {
+                            setIsResolvingElement(false);
                         }
                     }
 
@@ -1978,10 +1984,14 @@ export function SessionView({
                                     className={`btn btn-ghost btn-xs ${isPreviewPickerActive ? 'btn-active text-success' : ''}`}
                                     type="button"
                                     onClick={handleTogglePreviewPicker}
-                                    disabled={!previewUrl}
+                                    disabled={!previewUrl || isResolvingElement}
                                     title={isPreviewPickerActive ? 'Disable picker' : 'Pick element from preview'}
                                 >
-                                    <MousePointer2 className="h-3 w-3" />
+                                    {isResolvingElement ? (
+                                        <span className="loading loading-spinner loading-xs w-3 h-3"></span>
+                                    ) : (
+                                        <MousePointer2 className="h-3 w-3" />
+                                    )}
                                 </button>
                                 <button className="btn btn-xs" type="submit">
                                     Go
