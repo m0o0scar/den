@@ -523,6 +523,45 @@ export async function setTmuxSessionMouseMode(
   }
 }
 
+export async function setTmuxSessionStatusVisibility(
+  sessionName: string,
+  role: TerminalSessionRole,
+  visible: boolean
+): Promise<{ success: boolean; applied: boolean; error?: string }> {
+  if (os.platform() === 'win32') {
+    return { success: true, applied: false };
+  }
+
+  try {
+    const { spawnSync } = await import('child_process');
+    const tmuxSession = getTmuxSessionName(sessionName, role);
+    const hasSessionResult = spawnSync('tmux', ['has-session', '-t', tmuxSession], {
+      stdio: 'ignore',
+      env: process.env,
+    });
+
+    // Session might not be created yet (e.g. hidden terminal iframe not initialized).
+    // Treat this as a no-op so callers can retry later.
+    if (typeof hasSessionResult.status === 'number' && hasSessionResult.status !== 0) {
+      return { success: true, applied: false };
+    }
+
+    const result = spawnSync('tmux', ['set-option', '-t', tmuxSession, 'status', visible ? 'on' : 'off'], {
+      stdio: 'ignore',
+      env: process.env,
+    });
+
+    if (typeof result.status === 'number' && result.status !== 0) {
+      return { success: false, applied: false, error: `tmux exited with status ${result.status}` };
+    }
+
+    return { success: true, applied: true };
+  } catch (error) {
+    console.error('Failed to set tmux session status visibility:', error);
+    return { success: false, applied: false, error: 'Failed to set tmux session status visibility.' };
+  }
+}
+
 export async function terminateSessionTerminalSessions(sessionName: string): Promise<void> {
   if (os.platform() === 'win32') return;
 

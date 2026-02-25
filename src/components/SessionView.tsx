@@ -12,7 +12,7 @@ import {
     updateSessionBaseBranch,
     writeSessionPromptFile
 } from '@/app/actions/session';
-import { setTmuxSessionMouseMode } from '@/app/actions/git';
+import { setTmuxSessionMouseMode, setTmuxSessionStatusVisibility } from '@/app/actions/git';
 import { getConfig, updateConfig } from '@/app/actions/config';
 import { Trash2, ExternalLink, Play, GitCommitHorizontal, GitMerge, GitPullRequestArrow, GitBranch, ArrowUp, ArrowDown, FolderOpen, ChevronLeft, Grip, ChevronDown, Plus, Globe, MousePointer2, ArrowLeft, ArrowRight, RotateCw } from 'lucide-react';
 import SessionFileBrowser from './SessionFileBrowser';
@@ -237,11 +237,19 @@ export function SessionView({
         agent: 'idle',
         terminal: 'idle',
     });
+    const tmuxStatusAppliedRef = useRef<Record<TerminalBootstrapSlot, boolean>>({
+        agent: false,
+        terminal: false,
+    });
 
     useEffect(() => {
         terminalBootstrapStateRef.current = {
             agent: 'idle',
             terminal: 'idle',
+        };
+        tmuxStatusAppliedRef.current = {
+            agent: false,
+            terminal: false,
         };
         if (terminalStartupScriptStateRef.current.timer !== null) {
             window.clearTimeout(terminalStartupScriptStateRef.current.timer);
@@ -757,6 +765,20 @@ export function SessionView({
             setFeedback(mode === 'scroll' ? 'Terminal mode: Scroll' : 'Terminal mode: Text Select');
         }
         return true;
+    }, [sessionName, terminalPersistenceMode]);
+
+    const ensureTmuxStatusBarHidden = useCallback((slot: TerminalBootstrapSlot) => {
+        if (terminalPersistenceMode !== 'tmux') return;
+        if (tmuxStatusAppliedRef.current[slot]) return;
+
+        void (async () => {
+            const result = await setTmuxSessionStatusVisibility(sessionName, slot, false);
+            if (result.success && result.applied) {
+                tmuxStatusAppliedRef.current[slot] = true;
+            } else if (!result.success) {
+                console.error(`Failed to hide tmux status bar for ${slot}:`, result.error);
+            }
+        })();
     }, [sessionName, terminalPersistenceMode]);
 
     useEffect(() => {
@@ -1536,6 +1558,7 @@ export function SessionView({
             try {
                 const win = iframe.contentWindow as TerminalWindow | null;
                 if (win && win.term) {
+                    ensureTmuxStatusBarHidden('agent');
                     const term = win.term;
                     attachTerminalLinkHandler(iframe, agentFrameLinkCleanupRef);
 
@@ -1765,6 +1788,7 @@ export function SessionView({
             try {
                 const win = iframe.contentWindow as TerminalWindow | null;
                 if (win && win.term) {
+                    ensureTmuxStatusBarHidden('terminal');
                     const term = win.term;
                     attachTerminalLinkHandler(iframe, terminalFrameLinkCleanupRef, {
                         onLinkActivated: () => setIsTerminalMinimized(true),
