@@ -267,26 +267,26 @@ export async function listSessions(repoPath?: string): Promise<SessionMetadata[]
   try {
     const sessionsDir = await getSessionsDir();
     const entries = await fs.readdir(sessionsDir);
-    const sessions: SessionMetadata[] = [];
 
-    for (const entry of entries) {
-      if (!entry.endsWith('.json')) continue;
-
-      try {
-        const filePath = path.join(sessionsDir, entry);
-        const content = await fs.readFile(filePath, 'utf-8');
-        const data = JSON.parse(content) as SessionMetadata;
-
-        // Filter by repoPath if provided
-        if (repoPath && data.repoPath !== repoPath) {
-          continue;
+    const sessionPromises = entries
+      .filter((entry) => entry.endsWith('.json'))
+      .map(async (entry) => {
+        try {
+          const filePath = path.join(sessionsDir, entry);
+          const content = await fs.readFile(filePath, 'utf-8');
+          const data = JSON.parse(content) as SessionMetadata;
+          return data;
+        } catch (e) {
+          console.error(`Failed to parse session file ${entry}:`, e);
+          return null;
         }
+      });
 
-        sessions.push(data);
-      } catch (e) {
-        console.error(`Failed to parse session file ${entry}:`, e);
-      }
-    }
+    const sessions = (await Promise.all(sessionPromises)).filter((s): s is SessionMetadata => {
+      if (!s) return false;
+      if (repoPath && s.repoPath !== repoPath) return false;
+      return true;
+    });
 
     // Sort by timestamp desc
     return sessions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
