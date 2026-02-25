@@ -24,6 +24,7 @@ export default function SessionPage() {
     const [contextTitle, setContextTitle] = useState<string | undefined>(undefined);
     const [contextAgentProvider, setContextAgentProvider] = useState<string | undefined>(undefined);
     const [contextModel, setContextModel] = useState<string | undefined>(undefined);
+    const [contextSessionMode, setContextSessionMode] = useState<'fast' | 'plan' | undefined>(undefined);
 
     // True = send --resume to agent; False = send fresh start params
     const [isResume, setIsResume] = useState<boolean>(true);
@@ -77,6 +78,7 @@ export default function SessionPage() {
                         setContextTitle(ctx.title);
                         setContextAgentProvider(ctx.agentProvider);
                         setContextModel(ctx.model);
+                        setContextSessionMode(ctx.sessionMode);
                     }
                     // Whether or not we got context, this is a fresh start
                     setIsResume(false);
@@ -155,6 +157,7 @@ export default function SessionPage() {
             rawInitialMessage={rawInitialMessage}
             title={contextTitle || metadata.title}
             attachmentNames={attachmentNames}
+            sessionMode={contextSessionMode}
             onExit={handleExit}
             isResume={isResume}
             terminalPersistenceMode={terminalPersistenceMode}

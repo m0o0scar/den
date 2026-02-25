@@ -53,6 +53,10 @@ const TRIDENT_WORKSPACE_URL = 'http://localhost:3100/workspace';
 const TERMINAL_BOOTSTRAP_STORAGE_PREFIX = 'viba:terminal-bootstrap:';
 const TERMINAL_BOOTSTRAP_RUNTIME_KEY = '__vibaTerminalBootstrapRegistry';
 const SHELL_PROMPT_PATTERN = /(?:\$|%|#|>) $/;
+const PLAN_MODE_STARTUP_INSTRUCTION =
+    'Plan mode requirements: study the repository thoroughly first, then present a concrete implementation plan, and wait for explicit user approval before making file changes or running write operations.';
+const AUTO_COMMIT_INSTRUCTION =
+    'After each round of conversation, if work is completed and files changed, commit all changes with an appropriate git commit message. The commit message must include a clear title and a detailed body describing what changed and why, not just a title. No need to confirm when creating commits.';
 
 const clampAgentPaneRatio = (value: number): number => Math.max(0.2, Math.min(0.8, value));
 
@@ -176,6 +180,7 @@ export interface SessionViewProps {
     rawInitialMessage?: string;
     title?: string;
     attachmentNames?: string[];
+    sessionMode?: 'fast' | 'plan';
     onExit: (force?: boolean) => void;
     isResume?: boolean;
     terminalPersistenceMode?: 'tmux' | 'shell';
@@ -196,6 +201,7 @@ export function SessionView({
     rawInitialMessage,
     title,
     attachmentNames,
+    sessionMode = 'fast',
     onExit,
     isResume,
     terminalPersistenceMode = 'shell',
@@ -1613,7 +1619,14 @@ export function SessionView({
                                 const safeTitle = title?.trim() || '';
                                 const parts = [];
                                 if (safeTitle) parts.push(safeTitle);
-                                if (initialMessage) parts.push(initialMessage);
+                                const trimmedInitialMessage = initialMessage?.trim() || '';
+                                if (trimmedInitialMessage) parts.push(trimmedInitialMessage);
+                                if (sessionMode === 'plan' && !trimmedInitialMessage.includes(PLAN_MODE_STARTUP_INSTRUCTION)) {
+                                    parts.push(PLAN_MODE_STARTUP_INSTRUCTION);
+                                }
+                                if (!trimmedInitialMessage.includes(AUTO_COMMIT_INSTRUCTION)) {
+                                    parts.push(AUTO_COMMIT_INSTRUCTION);
+                                }
                                 let fullMessage = parts.join('\n\n');
                                 if (attachmentNames && attachmentNames.length > 0) {
                                     const attachmentBasePath = `${worktree || repo}-attachments`;
