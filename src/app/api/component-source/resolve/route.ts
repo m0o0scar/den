@@ -3,6 +3,7 @@ import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { NextRequest, NextResponse } from 'next/server';
+import { escapeRegex, toKebabCase, toPascalCase, uniqueStrings } from '@/lib/string-utils';
 
 export const runtime = 'nodejs';
 
@@ -37,16 +38,6 @@ const IGNORED_DIR_NAMES = new Set([
 const MAX_WALKED_FILES = 10000;
 const MAX_FILE_BYTES = 512 * 1024;
 
-const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const toKebabCase = (value: string): string =>
-  value
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/[\s_]+/g, '-')
-    .toLowerCase();
-
-const unique = (items: string[]): string[] => Array.from(new Set(items));
-
 const normalizeComponentLookupName = (value: string): string => {
   const trimmed = value.trim();
   if (!trimmed) return '';
@@ -54,13 +45,6 @@ const normalizeComponentLookupName = (value: string): string => {
   const match = trimmed.match(/[A-Za-z_$][\w$]*/);
   return match ? match[0] : '';
 };
-
-const toPascalCase = (value: string): string =>
-  value
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .map((segment) => segment[0] ? segment[0].toUpperCase() + segment.slice(1) : '')
-    .join('');
 
 const buildSearchPatterns = (componentName: string): string[] => {
   const escaped = escapeRegex(componentName);
@@ -104,7 +88,7 @@ const buildDirectCandidates = (componentName: string): string[] => {
     'components',
     'src',
   ];
-  const baseNames = unique([kebab, pascal, snake, componentName]);
+  const baseNames = uniqueStrings([kebab, pascal, snake, componentName]);
   const candidates: string[] = [];
 
   for (const dir of baseDirs) {
@@ -301,7 +285,7 @@ const scoreCandidate = (candidatePath: string, componentName: string): number =>
 };
 
 const pickBestCandidate = (workspaceRoot: string, componentName: string, relativePaths: string[]): string | null => {
-  const absoluteCandidates = unique(relativePaths)
+  const absoluteCandidates = uniqueStrings(relativePaths)
     .map((relativePath) => path.resolve(workspaceRoot, relativePath))
     .filter(Boolean);
 
