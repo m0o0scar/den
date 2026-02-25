@@ -185,7 +185,7 @@ export default function CredentialsPage() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 items-start">
             <div className="card bg-base-200 shadow-xl">
               <div className="card-body space-y-4">
                 <h2 className="card-title flex items-center gap-2">
