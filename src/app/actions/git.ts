@@ -415,11 +415,13 @@ export async function startTtydProcess(): Promise<{ success: boolean; persistenc
 
     const ttydArgs = [
       '-p', '7681',
-      '-t', 'theme={"background": "white", "foreground": "black", "cursor": "black", "selectionBackground": "rgba(59, 130, 246, 0.4)"}',
+      '-t', 'theme={"background": "white", "foreground": "#202124", "cursor": "#202124", "selectionBackground": "rgba(59, 130, 246, 0.35)"}',
       '-t', 'disableResizeOverlay=true',
+      '-t', 'fontFamily=Monaco, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace',
       '-t', 'fontSize=13',
-      '-t', 'lineHeight=1.15',
-      '-t', 'fontWeight=250',
+      '-t', 'lineHeight=1.2',
+      '-t', 'letterSpacing=0.2',
+      '-t', 'fontWeight=200',
       '-t', 'fontWeightBold=500',
       '-w', workingDir,
       '-W',
