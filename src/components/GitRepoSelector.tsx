@@ -1285,7 +1285,7 @@ export default function GitRepoSelector({
   return (
     <>
       {mode === 'home' && (
-        <div className="card w-full max-w-2xl bg-base-200 shadow-xl">
+        <div className="card w-full max-w-4xl bg-base-200 shadow-xl">
           <div className="card-body">
             <h2 className="card-title flex justify-between items-center">
               <div className="flex items-center gap-2">
