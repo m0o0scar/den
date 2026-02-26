@@ -420,7 +420,7 @@ export async function startTtydProcess(): Promise<{ success: boolean; persistenc
       '-t', 'fontSize=13',
       '-t', 'lineHeight=1.15',
       '-t', 'fontWeight=250',
-      '-t', 'fontWeightBold=450',
+      '-t', 'fontWeightBold=500',
       '-w', workingDir,
       '-W',
     ];
