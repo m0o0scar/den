@@ -6,11 +6,6 @@ import { SessionView } from '@/components/SessionView';
 import { consumeSessionLaunchContext, getSessionMetadata, SessionMetadata, markSessionInitialized } from '@/app/actions/session';
 import { getSessionTerminalSources, startTtydProcess } from '@/app/actions/git';
 
-type SessionNotificationMessage = {
-    title: string;
-    description: string;
-};
-
 type SessionNotificationPayload = {
     type: 'session-notification';
     sessionId: string;
@@ -45,10 +40,8 @@ export default function SessionPage() {
     // True = send --resume to agent; False = send fresh start params
     const [isResume, setIsResume] = useState<boolean>(true);
     const [terminalPersistenceMode, setTerminalPersistenceMode] = useState<'tmux' | 'shell'>('shell');
-    const [sessionNotification, setSessionNotification] = useState<SessionNotificationMessage | null>(null);
 
     const handleOpenSessionNotification = useCallback(() => {
-        setSessionNotification(null);
         if (!sessionId) return;
 
         window.focus();
@@ -115,10 +108,6 @@ export default function SessionPage() {
         };
 
         const handleIncomingNotification = (payload: SessionNotificationPayload) => {
-            setSessionNotification({
-                title: payload.title,
-                description: payload.description,
-            });
             void showBrowserNotification(payload);
         };
 
@@ -306,49 +295,26 @@ export default function SessionPage() {
     }
 
     return (
-        <>
-            {sessionNotification && (
-                <div className="fixed right-4 top-4 z-[1001] w-[min(26rem,calc(100vw-2rem))] rounded-lg border border-base-300 bg-base-100 shadow-xl">
-                    <button
-                        type="button"
-                        className="w-full px-4 pb-3 pt-3 text-left transition-colors hover:bg-base-200"
-                        onClick={handleOpenSessionNotification}
-                    >
-                        <p className="text-sm font-semibold">{sessionNotification.title}</p>
-                        <p className="mt-1 text-sm opacity-80">{sessionNotification.description}</p>
-                    </button>
-                    <div className="flex justify-end border-t border-base-300 px-2 py-1">
-                        <button
-                            type="button"
-                            className="btn btn-ghost btn-xs"
-                            onClick={() => setSessionNotification(null)}
-                        >
-                            Dismiss
-                        </button>
-                    </div>
-                </div>
-            )}
-            <SessionView
-                repo={metadata.repoPath}
-                worktree={metadata.worktreePath}
-                branch={metadata.branchName}
-                baseBranch={metadata.baseBranch}
-                sessionName={metadata.sessionName}
-                agent={contextAgentProvider || metadata.agent}
-                model={contextModel || metadata.model}
-                startupScript={startupScript}
-                devServerScript={metadata.devServerScript}
-                initialMessage={initialMessage}
-                attachmentNames={contextAttachmentNames}
-                title={contextTitle || metadata.title}
-                sessionMode={contextSessionMode}
-                onExit={handleExit}
-                isResume={isResume}
-                terminalPersistenceMode={terminalPersistenceMode}
-                onSessionStart={handleSessionStart}
-                agentTerminalSrc={terminalSources.agentTerminalSrc}
-                floatingTerminalSrc={terminalSources.floatingTerminalSrc}
-            />
-        </>
+        <SessionView
+            repo={metadata.repoPath}
+            worktree={metadata.worktreePath}
+            branch={metadata.branchName}
+            baseBranch={metadata.baseBranch}
+            sessionName={metadata.sessionName}
+            agent={contextAgentProvider || metadata.agent}
+            model={contextModel || metadata.model}
+            startupScript={startupScript}
+            devServerScript={metadata.devServerScript}
+            initialMessage={initialMessage}
+            attachmentNames={contextAttachmentNames}
+            title={contextTitle || metadata.title}
+            sessionMode={contextSessionMode}
+            onExit={handleExit}
+            isResume={isResume}
+            terminalPersistenceMode={terminalPersistenceMode}
+            onSessionStart={handleSessionStart}
+            agentTerminalSrc={terminalSources.agentTerminalSrc}
+            floatingTerminalSrc={terminalSources.floatingTerminalSrc}
+        />
     );
 }
