@@ -8,6 +8,13 @@ Viba is a local session manager for AI coding agents. It lets you pick a Git rep
 
 - **Isolated Sessions**: Uses `git worktree` to create clean, isolated environments for every task, with automatic per-session branch naming (`viba/<session>`).
 - **New Attempt Flow**: Start new sessions pre-filled with context (title, model, prompt, attachments) from any previous session to iterate quickly.
+- **Live Preview & Visual Tools**:
+  - **Integrated Browser Proxy**: View your running web app side-by-side with the agent.
+  - **Element Picker**: Click any element in the preview to automatically resolve its React component source file and insert it into the agent's context.
+- **Credential Management**: Securely manage Personal Access Tokens for GitHub/GitLab and API keys for agents (like Codex) via a dedicated UI, encrypted at rest.
+- **Session Modes**:
+  - **Fast Mode**: Standard execution loop.
+  - **Plan Mode**: Instructs the agent to inspect code and present a concrete plan before making changes.
 - **Enhanced File Browser**:
     - **Grid & List Views**: Browse files with rich thumbnails or a compact list.
     - **Pinned Shortcuts**: Pin frequently used directories for quick navigation across session restarts.
@@ -20,9 +27,11 @@ Viba is a local session manager for AI coding agents. It lets you pick a Git rep
   - Real-time Git status (ahead/behind counts, uncommitted changes).
   - One-click **Commit**, **Merge**, and **Rebase** operations.
   - **IDE Deep-links**: Open session worktrees directly in VS Code, Cursor, Windsurf, or Antigravity.
+  - **Trident Integration**: View complex diffs and merge conflicts in Trident.
 - **Robust Session Resume**: Resume any session with full context, preserving original startup flags and model overrides.
 - **Async Operations**: Performance-optimized background tasks like session purging to keep the UI responsive.
 - **Multi-Agent Support**: Out-of-the-box support for Codex, Gemini, and Cursor Agent, with a customizable provider/model selector.
+- **Theme Support**: Automatic Light/Dark mode switching based on system preference, or manual override.
 - **Persistent Metadata**: All session data and configurations are stored locally under `~/.viba`.
 
 ## Tech Stack
@@ -35,8 +44,8 @@ Viba is a local session manager for AI coding agents. It lets you pick a Git rep
 ## Prerequisites
 
 - Node.js and npm
-- A system package manager (`viba-cli` auto-installs `ttyd` and `tmux` when missing on macOS/Linux, and runs `npx skills add https://github.com/vercel-labs/agent-browser --skill agent-browser --agent codex cursor gemini-cli -g -y` plus `npx skills add https://github.com/obra/superpowers --skill systematic-debugging --agent codex cursor gemini-cli -g -y` for Codex skill provisioning)
-- At least one supported agent CLI installed (for example `codex`, `gemini`, or `agent`)
+- A system package manager (`viba-cli` attempts to auto-install `ttyd` and `tmux` if missing on macOS/Linux/Windows).
+- At least one supported agent CLI installed (e.g. `codex`). `viba-cli` can assist with installing supported agents and their skills.
 
 ## Getting Started
 
