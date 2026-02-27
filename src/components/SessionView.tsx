@@ -1902,7 +1902,7 @@ export function SessionView({
                                 disabled={isRebasing || isMerging || isUpdatingBaseBranch}
                                 title="Select base branch and rebase"
                             >
-                                {isRebasing ? <span className="loading loading-spinner loading-xs"></span> : <GitPullRequestArrow className="w-3 h-3" />}
+                                {isRebasing ? <span className="loading loading-spinner loading-xs"></span> : <GitMerge className="w-3 h-3" />}
                                 <span className={headerButtonLabelClass}>Rebase</span>
                                 <ChevronDown className="w-3 h-3 opacity-50 ml-0.5" />
                             </button>
@@ -1946,7 +1946,7 @@ export function SessionView({
                             disabled={isMerging || isRebasing || isUpdatingBaseBranch || !currentBaseBranch}
                             title={currentBaseBranch ? `Merge current branch (${branch}) into target branch (${currentBaseBranch})` : 'Target branch unavailable for this session'}
                         >
-                            {isMerging ? <span className="loading loading-spinner loading-xs"></span> : <GitMerge className="w-3 h-3" />}
+                            {isMerging ? <span className="loading loading-spinner loading-xs"></span> : <GitPullRequestArrow className="w-3 h-3" />}
                             <span className={headerButtonLabelClass}>Merge</span>
                         </button>
                         <div className="h-4 w-[1px] bg-base-content/10 dark:bg-[#30363d]"></div>
