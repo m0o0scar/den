@@ -31,6 +31,8 @@ import { useDialogKeyboardShortcuts } from '@/hooks/useDialogKeyboardShortcuts';
 
 type SessionMode = 'fast' | 'plan';
 type RepoCredentialSelection = 'auto' | string;
+const DEFAULT_REPO_STARTUP_COMMAND = 'npm install';
+const DEFAULT_REPO_DEV_SERVER_COMMAND = 'npm run dev';
 
 function getCredentialOptionLabel(credential: Credential): string {
   if (credential.type === 'github') {
@@ -89,6 +91,8 @@ export default function GitRepoSelector({
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
   const [repoForSettings, setRepoForSettings] = useState<string | null>(null);
   const [repoCredentialSelection, setRepoCredentialSelection] = useState<RepoCredentialSelection>('auto');
+  const [repoStartupCommand, setRepoStartupCommand] = useState<string>(DEFAULT_REPO_STARTUP_COMMAND);
+  const [repoDevServerCommand, setRepoDevServerCommand] = useState<string>(DEFAULT_REPO_DEV_SERVER_COMMAND);
   const [credentialOptions, setCredentialOptions] = useState<Credential[]>([]);
 
   const router = useRouter();
@@ -185,6 +189,8 @@ export default function GitRepoSelector({
     setIsRepoSettingsDialogOpen(false);
     setRepoForSettings(null);
     setRepoCredentialSelection('auto');
+    setRepoStartupCommand(DEFAULT_REPO_STARTUP_COMMAND);
+    setRepoDevServerCommand(DEFAULT_REPO_DEV_SERVER_COMMAND);
     setRepoSettingsError(null);
     setIsLoadingCredentialOptions(false);
   }, [isSavingRepoSettings]);
@@ -828,8 +834,11 @@ export default function GitRepoSelector({
   const handleOpenRepoSettings = async (e: React.MouseEvent, repo: string) => {
     e.stopPropagation();
 
+    const settings = config?.repoSettings?.[repo];
     setRepoForSettings(repo);
     setRepoCredentialSelection(resolveRepoCredentialSelection(repo));
+    setRepoStartupCommand(settings?.startupScript?.trim() ? settings.startupScript : DEFAULT_REPO_STARTUP_COMMAND);
+    setRepoDevServerCommand(settings?.devServerScript?.trim() ? settings.devServerScript : DEFAULT_REPO_DEV_SERVER_COMMAND);
     setRepoSettingsError(null);
     setIsRepoSettingsDialogOpen(true);
     setIsLoadingCredentialOptions(true);
@@ -855,6 +864,8 @@ export default function GitRepoSelector({
   const handleSaveRepoSettings = async () => {
     if (!repoForSettings) return;
     const credentialId = repoCredentialSelection === 'auto' ? null : repoCredentialSelection;
+    const startupCommandToSave = repoStartupCommand.trim() || DEFAULT_REPO_STARTUP_COMMAND;
+    const devServerCommandToSave = repoDevServerCommand.trim() || DEFAULT_REPO_DEV_SERVER_COMMAND;
 
     if (credentialId && !credentialOptions.some((credential) => credential.id === credentialId)) {
       setRepoSettingsError('Selected credential no longer exists. Please choose another credential.');
@@ -866,6 +877,8 @@ export default function GitRepoSelector({
     try {
       const newConfig = await updateRepoSettings(repoForSettings, {
         credentialId,
+        startupScript: startupCommandToSave,
+        devServerScript: devServerCommandToSave,
         credentialPreference: undefined,
       });
       setConfig(newConfig);
@@ -1304,7 +1317,7 @@ export default function GitRepoSelector({
                         }}
                         role="button"
                         tabIndex={0}
-                        className="group relative h-[248px] overflow-hidden rounded-2xl border border-white/70 text-left shadow-[0_14px_40px_-24px_rgba(15,23,42,0.65)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_24px_48px_-26px_rgba(15,23,42,0.55)]"
+                        className="group relative h-[248px] cursor-pointer overflow-hidden rounded-2xl border border-white/70 text-left shadow-[0_14px_40px_-24px_rgba(15,23,42,0.65)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_24px_48px_-26px_rgba(15,23,42,0.55)]"
                         style={cardGradient}
                       >
                         <div className="absolute inset-0 bg-white/40" />
@@ -1427,6 +1440,34 @@ export default function GitRepoSelector({
                     No credentials found. Add credentials from the Credentials page.
                   </div>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Start Up Command</label>
+                <input
+                  className="input w-full border-slate-200 bg-slate-50 font-mono text-sm text-slate-800 focus:border-primary focus:outline-none"
+                  value={repoStartupCommand}
+                  onChange={(event) => setRepoStartupCommand(event.target.value)}
+                  placeholder={DEFAULT_REPO_STARTUP_COMMAND}
+                  disabled={isSavingRepoSettings}
+                />
+                <div className="text-xs text-slate-500">
+                  Default: <span className="font-mono">{DEFAULT_REPO_STARTUP_COMMAND}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Dev Server Command</label>
+                <input
+                  className="input w-full border-slate-200 bg-slate-50 font-mono text-sm text-slate-800 focus:border-primary focus:outline-none"
+                  value={repoDevServerCommand}
+                  onChange={(event) => setRepoDevServerCommand(event.target.value)}
+                  placeholder={DEFAULT_REPO_DEV_SERVER_COMMAND}
+                  disabled={isSavingRepoSettings}
+                />
+                <div className="text-xs text-slate-500">
+                  Default: <span className="font-mono">{DEFAULT_REPO_DEV_SERVER_COMMAND}</span>
+                </div>
               </div>
 
               {isLoadingCredentialOptions && (
