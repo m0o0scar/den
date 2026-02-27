@@ -100,6 +100,7 @@ export default function GitRepoSelector({
   const [isCloningRemote, setIsCloningRemote] = useState(false);
   const [isLoadingCloneCredentialOptions, setIsLoadingCloneCredentialOptions] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>('auto');
+  const [isDarkThemeActive, setIsDarkThemeActive] = useState(false);
 
   const [config, setConfig] = useState<Config | null>(null);
 
@@ -286,6 +287,7 @@ export default function GitRepoSelector({
       const shouldUseDark = resolveDarkMode();
       document.documentElement.classList.toggle('dark', shouldUseDark);
       document.documentElement.dataset.themeMode = themeMode;
+      setIsDarkThemeActive(shouldUseDark);
     };
 
     applyThemeMode();
@@ -1399,7 +1401,7 @@ export default function GitRepoSelector({
                         role="button"
                         tabIndex={0}
                         className="group relative h-[248px] cursor-pointer overflow-hidden rounded-2xl border border-white/70 text-left shadow-[0_14px_40px_-24px_rgba(15,23,42,0.65)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_24px_48px_-26px_rgba(15,23,42,0.55)] dark:border-slate-700/40 dark:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.85)] dark:hover:border-slate-600/55"
-                        style={cardGradient}
+                        style={isDarkThemeActive ? undefined : cardGradient}
                       >
                         <div className="absolute inset-0 bg-white/40 dark:bg-[#141a25]/58" />
                         <div className="relative flex h-full flex-col justify-between p-5">
