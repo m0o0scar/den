@@ -1310,8 +1310,8 @@ export default function GitRepoSelector({
     <>
       {mode === 'home' && (
         <div className="w-full max-w-7xl">
-          <div className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_24px_80px_-36px_rgba(15,23,42,0.4)] transition-colors dark:overflow-visible dark:rounded-none dark:border-transparent dark:bg-transparent dark:shadow-none">
-            <header className="relative z-10 flex flex-col gap-4 border-b border-slate-200/80 px-4 py-4 transition-colors md:flex-row md:items-center md:justify-between md:px-7 dark:mx-auto dark:mt-4 dark:h-16 dark:w-full dark:max-w-7xl dark:flex-row dark:gap-6 dark:rounded-xl dark:border dark:border-white/5 dark:bg-[#151b26]/80 dark:px-6 dark:py-0 dark:backdrop-blur-md">
+          <div className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_24px_80px_-36px_rgba(15,23,42,0.4)] transition-colors dark:border-slate-800/70 dark:bg-[#101726]/85 dark:shadow-[0_26px_78px_-40px_rgba(0,0,0,0.85)]">
+            <header className="relative z-10 flex flex-col gap-4 border-b border-slate-200/80 px-4 py-4 transition-colors md:flex-row md:items-center md:justify-between md:px-7 dark:border-slate-800/75 dark:bg-[#131b2b]/72 dark:backdrop-blur-sm">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100/90 shadow-sm dark:border dark:border-white/5 dark:bg-[#1e2532]">
                   <Image src="/icon.png" alt="Viba" width={22} height={22} className="rounded-sm" />
@@ -1346,7 +1346,7 @@ export default function GitRepoSelector({
                   New Repository
                 </button>
                 <button
-                  className="btn btn-ghost btn-sm btn-square text-slate-700 dark:bg-[#1e2532] dark:text-slate-300 dark:hover:bg-[#252d3d] dark:hover:text-white"
+                  className="btn btn-ghost btn-sm btn-square text-slate-700 dark:border dark:border-slate-700/60 dark:bg-[#1e2532] dark:text-slate-300 dark:hover:bg-[#252d3d] dark:hover:text-white"
                   onClick={handleCycleThemeMode}
                   title={`Theme mode: ${themeModeLabel}. Click to switch to ${nextThemeModeLabel}.`}
                   aria-label={`Theme mode: ${themeModeLabel}. Click to switch to ${nextThemeModeLabel}.`}
@@ -1364,11 +1364,11 @@ export default function GitRepoSelector({
               )}
 
               {!isLoaded ? (
-                <div className="flex h-56 items-center justify-center rounded-2xl border border-slate-200 bg-white/70 dark:border-white/10 dark:bg-[#151b26]/70">
+                <div className="flex h-56 items-center justify-center rounded-2xl border border-slate-200 bg-white/70 dark:border-slate-700/55 dark:bg-[#141d2e]/70">
                   <span className="loading loading-spinner loading-md text-primary"></span>
                 </div>
               ) : filteredRecentRepos.length === 0 ? (
-                <div className="flex h-56 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/70 text-center dark:border-white/10 dark:bg-[#151b26]/70">
+                <div className="flex h-56 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/70 text-center dark:border-slate-700/55 dark:bg-[#141d2e]/70">
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     {homeSearchQuery.trim() ? 'No repositories match your search.' : 'No recent repositories found.'}
                   </p>
@@ -1398,10 +1398,10 @@ export default function GitRepoSelector({
                         }}
                         role="button"
                         tabIndex={0}
-                        className="group relative h-[248px] cursor-pointer overflow-hidden rounded-2xl border border-white/70 text-left shadow-[0_14px_40px_-24px_rgba(15,23,42,0.65)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_24px_48px_-26px_rgba(15,23,42,0.55)] dark:border-white/10 dark:ring-1 dark:ring-white/10 dark:shadow-[0_20px_46px_-28px_rgba(0,0,0,0.9)] dark:hover:ring-primary/40"
+                        className="group relative h-[248px] cursor-pointer overflow-hidden rounded-2xl border border-white/70 text-left shadow-[0_14px_40px_-24px_rgba(15,23,42,0.65)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_24px_48px_-26px_rgba(15,23,42,0.55)] dark:border-slate-700/40 dark:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.85)] dark:hover:border-slate-600/55"
                         style={cardGradient}
                       >
-                        <div className="absolute inset-0 bg-white/40 dark:bg-[#141a25]/60" />
+                        <div className="absolute inset-0 bg-white/40 dark:bg-[#141a25]/58" />
                         <div className="relative flex h-full flex-col justify-between p-5">
                           <div className="flex items-start justify-between gap-3">
                             <div className="relative">
@@ -1458,7 +1458,7 @@ export default function GitRepoSelector({
 
                   <button
                     onClick={openCloneRemoteDialog}
-                    className="group flex h-[248px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/70 text-slate-600 transition-all duration-200 hover:-translate-y-1 hover:border-primary/50 hover:bg-white dark:border-slate-700/60 dark:bg-[#151b26] dark:text-slate-400 dark:hover:bg-[#1e2532]"
+                    className="group flex h-[248px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/70 text-slate-600 transition-all duration-200 hover:-translate-y-1 hover:border-primary/50 hover:bg-white dark:border-slate-700/35 dark:bg-[#131b2a] dark:text-slate-400 dark:hover:border-slate-600/50 dark:hover:bg-[#1d2638]"
                   >
                     <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm transition-transform group-hover:scale-105 dark:border dark:border-slate-700/40 dark:bg-[#1e2532]">
                       <Plus className="h-7 w-7 text-slate-400 transition-colors group-hover:text-primary" />
