@@ -5,7 +5,6 @@ import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import {
     deleteSessionInBackground,
     getSessionDivergence,
-    getSessionUncommittedFileCount,
     listSessionBaseBranches,
     mergeSessionToBase,
     rebaseSessionOntoBase,
@@ -14,7 +13,7 @@ import {
 } from '@/app/actions/session';
 import { setTmuxSessionMouseMode, setTmuxSessionStatusVisibility } from '@/app/actions/git';
 import { getConfig, updateConfig } from '@/app/actions/config';
-import { Trash2, ExternalLink, Play, GitCommitHorizontal, GitMerge, GitPullRequestArrow, GitBranch, ArrowUp, ArrowDown, FolderOpen, ChevronLeft, Grip, ChevronDown, Plus, Globe, MousePointer2, ArrowLeft, ArrowRight, RotateCw } from 'lucide-react';
+import { Trash2, ExternalLink, Play, GitMerge, GitPullRequestArrow, GitBranch, ArrowUp, ArrowDown, FolderOpen, ChevronLeft, Grip, ChevronDown, Plus, MousePointer2, ArrowLeft, ArrowRight, RotateCw } from 'lucide-react';
 import SessionFileBrowser from './SessionFileBrowser';
 import { getBaseName, isWindowsAbsolutePath } from '@/lib/path';
 import { notifySessionsUpdated } from '@/lib/session-updates';
@@ -518,7 +517,6 @@ export function SessionView({
     const [cleanupError, setCleanupError] = useState<string | null>(null);
     const [isStartingDevServer, setIsStartingDevServer] = useState(false);
     const [isTerminalForegroundProcessRunning, setIsTerminalForegroundProcessRunning] = useState(false);
-    const [isRequestingCommit, setIsRequestingCommit] = useState(false);
     const [isMerging, setIsMerging] = useState(false);
     const [isRebasing, setIsRebasing] = useState(false);
     const [isFileBrowserOpen, setIsFileBrowserOpen] = useState(false);
@@ -530,7 +528,6 @@ export function SessionView({
     const isLoadingBaseBranchesRef = useRef(false);
     const [isUpdatingBaseBranch, setIsUpdatingBaseBranch] = useState(false);
     const [divergence, setDivergence] = useState({ ahead: 0, behind: 0 });
-    const [uncommittedFileCount, setUncommittedFileCount] = useState(0);
     const [isPreviewVisible, setIsPreviewVisible] = useState(true);
     const [previewInputUrl, setPreviewInputUrl] = useState('');
     const [previewUrl, setPreviewUrl] = useState('');
@@ -856,85 +853,6 @@ export function SessionView({
         await runCleanup(true);
     };
 
-    const sendPromptToAgentIframe = useCallback((prompt: string, action: string): Promise<boolean> => {
-        return new Promise((resolve) => {
-            const iframe = iframeRef.current;
-            if (!iframe) {
-                resolve(false);
-                return;
-            }
-
-            const checkAndSend = (attempts = 0) => {
-                if (attempts > 30) {
-                    resolve(false);
-                    return;
-                }
-
-                try {
-                    const win = iframe.contentWindow as TerminalWindow | null;
-                    if (!win) {
-                        setTimeout(() => checkAndSend(attempts + 1), 300);
-                        return;
-                    }
-
-                    win.postMessage(
-                        {
-                            type: 'viba:agent-request',
-                            action,
-                            prompt,
-                            sessionName,
-                            branch,
-                            baseBranch: currentBaseBranch || undefined,
-                            timestamp: Date.now(),
-                        },
-                        '*'
-                    );
-
-                    if (!win.term) {
-                        setTimeout(() => checkAndSend(attempts + 1), 300);
-                        return;
-                    }
-
-                    win.term.paste(prompt);
-
-                    const textarea = iframe.contentDocument?.querySelector("textarea.xterm-helper-textarea");
-                    if (textarea) {
-                        textarea.dispatchEvent(new KeyboardEvent('keypress', {
-                            bubbles: true,
-                            cancelable: true,
-                            charCode: 13,
-                            keyCode: 13,
-                            key: 'Enter',
-                            view: win
-                        }));
-                        (textarea as HTMLElement).focus();
-                    } else {
-                        win.term.paste('\r');
-                    }
-
-                    win.focus();
-                    resolve(true);
-                } catch (e) {
-                    console.error('Failed to send prompt to agent iframe:', e);
-                    setTimeout(() => checkAndSend(attempts + 1), 300);
-                }
-            };
-
-            checkAndSend();
-        });
-    }, [branch, currentBaseBranch, sessionName]);
-
-    const handleCommit = async () => {
-        setIsRequestingCommit(true);
-        setFeedback('Requesting commit from agent...');
-
-        const prompt = 'Please create a git commit with the current changes in this worktree.';
-        const sent = await sendPromptToAgentIframe(prompt, 'commit');
-
-        setFeedback(sent ? 'Commit request sent to agent' : 'Failed to send commit request to agent');
-        setIsRequestingCommit(false);
-    };
-
     const pasteIntoAgentIframe = useCallback((text: string): Promise<boolean> => {
         return new Promise((resolve) => {
             const iframe = iframeRef.current;
@@ -1117,30 +1035,6 @@ export function SessionView({
             setIsUpdatingBaseBranch(false);
         }
     };
-
-    const loadUncommittedFileCount = useCallback(async () => {
-        if (!sessionName) return;
-
-        try {
-            const result = await getSessionUncommittedFileCount(sessionName);
-            if (result.success && typeof result.count === 'number') {
-                setUncommittedFileCount(result.count);
-            }
-        } catch (e) {
-            console.error('Failed to load uncommitted file count:', e);
-        }
-    }, [sessionName]);
-
-    useEffect(() => {
-        if (!sessionName) return;
-
-        void loadUncommittedFileCount();
-        const timer = window.setInterval(() => {
-            void loadUncommittedFileCount();
-        }, 10000);
-
-        return () => window.clearInterval(timer);
-    }, [loadUncommittedFileCount, sessionName]);
 
     const runMerge = async (): Promise<boolean> => {
         if (!sessionName) return false;
@@ -2009,16 +1903,6 @@ export function SessionView({
                             <GitBranch className="w-3 h-3" />
                             <span className={headerButtonLabelClass}>Diff</span>
                         </button>
-                        <div className="w-[1px] h-4 bg-base-content/10"></div>
-                        <button
-                            className="btn btn-ghost btn-xs rounded-none h-6 min-h-6 border-none px-2 hover:bg-base-content/10"
-                            onClick={handleCommit}
-                            disabled={isRequestingCommit}
-                            title="Ask agent to create a commit with current changes"
-                        >
-                            {isRequestingCommit ? <span className="loading loading-spinner loading-xs"></span> : <GitCommitHorizontal className="w-3 h-3" />}
-                            <span className={headerButtonLabelClass}>Commit ({uncommittedFileCount})</span>
-                        </button>
                     </div>
 
                     <div className="flex items-center border border-base-content/20 rounded overflow-hidden bg-base-100">
@@ -2051,15 +1935,6 @@ export function SessionView({
                         >
                             {isStartingDevServer ? <span className="loading loading-spinner loading-xs"></span> : <Play className="w-3 h-3" />}
                             <span className={headerButtonLabelClass}>Dev</span>
-                        </button>
-                        <div className="w-[1px] h-4 bg-base-content/10"></div>
-                        <button
-                            className="btn btn-ghost btn-xs rounded-none h-6 min-h-6 border-none px-2 hover:bg-base-content/10"
-                            onClick={() => setIsPreviewVisible((previous) => !previous)}
-                            title={isPreviewVisible ? 'Hide preview panel' : 'Show preview panel'}
-                        >
-                            <Globe className="w-3 h-3" />
-                            <span className={headerButtonLabelClass}>{isPreviewVisible ? 'Close' : 'Preview'}</span>
                         </button>
                     </div>
 
