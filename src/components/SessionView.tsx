@@ -47,6 +47,7 @@ const SPLIT_RATIO_STORAGE_KEY = 'viba-agent-preview-split-ratio';
 const RIGHT_PANEL_COLLAPSED_STORAGE_KEY = 'viba-right-panel-collapsed';
 const DEFAULT_AGENT_PANE_RATIO = 0.5;
 const DEFAULT_COLLAPSED_RIGHT_PANEL_WIDTH = 560;
+const AGENT_ACTIVITY_ACTION_LABEL_MIN_WIDTH = 550;
 const TERMINAL_HEADER_HEIGHT = 36;
 const TRIDENT_WORKSPACE_URL = 'http://localhost:3100/workspace';
 const TERMINAL_BOOTSTRAP_STORAGE_PREFIX = 'viba:terminal-bootstrap:';
@@ -270,6 +271,7 @@ export function SessionView({
     const previewAddressInputRef = useRef<HTMLInputElement>(null);
     const splitContainerRef = useRef<HTMLDivElement>(null);
     const rightPanelContainerRef = useRef<HTMLDivElement>(null);
+    const agentActivityPanelRef = useRef<HTMLDivElement>(null);
     const splitResizeRef = useRef({ startX: 0, startRatio: DEFAULT_AGENT_PANE_RATIO });
     const agentFrameLinkCleanupRef = useRef<(() => void) | null>(null);
     const terminalFrameLinkCleanupRef = useRef<(() => void) | null>(null);
@@ -588,6 +590,7 @@ export function SessionView({
     const [isSplitResizing, setIsSplitResizing] = useState(false);
     const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
     const [collapsedRightPanelWidth, setCollapsedRightPanelWidth] = useState(DEFAULT_COLLAPSED_RIGHT_PANEL_WIDTH);
+    const [showAgentActivityActionLabels, setShowAgentActivityActionLabels] = useState(false);
 
     const [isTerminalMinimized, setIsTerminalMinimized] = useState(false);
 
@@ -746,6 +749,25 @@ export function SessionView({
         observer.observe(rightPanelContainerRef.current);
         return () => observer.disconnect();
     }, [isRightPanelCollapsed]);
+
+    useEffect(() => {
+        const updateWidth = () => {
+            const nextWidth = agentActivityPanelRef.current?.getBoundingClientRect().width;
+            if (!nextWidth || !Number.isFinite(nextWidth)) return;
+            const shouldShowLabels = nextWidth > AGENT_ACTIVITY_ACTION_LABEL_MIN_WIDTH;
+            setShowAgentActivityActionLabels((current) => (current === shouldShowLabels ? current : shouldShowLabels));
+        };
+
+        updateWidth();
+
+        if (typeof ResizeObserver === 'undefined' || !agentActivityPanelRef.current) {
+            return;
+        }
+
+        const observer = new ResizeObserver(updateWidth);
+        observer.observe(agentActivityPanelRef.current);
+        return () => observer.disconnect();
+    }, []);
 
     const startSplitResize = (e: React.MouseEvent<HTMLDivElement>) => {
         if (isRightPanelCollapsed) return;
@@ -2197,6 +2219,7 @@ export function SessionView({
                 className={`relative flex min-h-0 flex-1 overflow-x-hidden bg-[#f6f6f8] p-3 dark:bg-[#0d1117] ${isRightPanelCollapsed ? 'gap-0' : 'gap-3'}`}
             >
                 <div
+                    ref={agentActivityPanelRef}
                     className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-[width] duration-300 ease-in-out dark:border-[#30363d] dark:bg-[#161b22]"
                     style={{ width: isRightPanelCollapsed ? '100%' : `${agentPaneRatio * 100}%` }}
                 >
@@ -2221,9 +2244,10 @@ export function SessionView({
                                     className="btn btn-ghost btn-xs h-6 min-h-6 rounded-none border-none px-2 text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-[#30363d]/60"
                                     onClick={handleOpenIde}
                                     title={`Open in ${SUPPORTED_IDES.find(i => i.id === selectedIde)?.name}`}
+                                    aria-label="Open in IDE"
                                 >
                                     <ExternalLink className="h-3 w-3" />
-                                    <span className="hidden min-[1700px]:inline">Open in IDE</span>
+                                    {showAgentActivityActionLabels && <span>Open in IDE</span>}
                                 </button>
                             </div>
                             <div className="flex shrink-0 items-center overflow-hidden rounded border border-slate-200 bg-white dark:border-[#30363d] dark:bg-[#0d1117]">
@@ -2232,9 +2256,10 @@ export function SessionView({
                                     onClick={handleShowDiffWithTrident}
                                     disabled={!worktree || !branch}
                                     title="Open this worktree and branch in Trident"
+                                    aria-label="Diff"
                                 >
                                     <GitBranch className="h-3 w-3" />
-                                    <span className="hidden min-[1700px]:inline">Diff</span>
+                                    {showAgentActivityActionLabels && <span>Diff</span>}
                                 </button>
                             </div>
                             <div className="flex shrink-0 items-center overflow-hidden rounded border border-slate-200 bg-white dark:border-[#30363d] dark:bg-[#0d1117]">
@@ -2243,9 +2268,10 @@ export function SessionView({
                                     onClick={() => setIsFileBrowserOpen(true)}
                                     disabled={isInsertingFilePaths}
                                     title="Browse files and insert absolute paths into the agent input"
+                                    aria-label="Add files"
                                 >
                                     {isInsertingFilePaths ? <span className="loading loading-spinner loading-xs"></span> : <FolderOpen className="h-3 w-3" />}
-                                    <span className="hidden min-[1700px]:inline">Add Files</span>
+                                    {showAgentActivityActionLabels && <span>Add Files</span>}
                                 </button>
                             </div>
                             <div className="flex shrink-0 items-center overflow-hidden rounded border border-slate-200 bg-white dark:border-[#30363d] dark:bg-[#0d1117]">
