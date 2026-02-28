@@ -11,14 +11,16 @@ export default function WorkspaceLayout({
     const sidebarCollapsed = getSettings().sidebarCollapsed ?? false;
 
     return (
-        <div className="flex min-h-[calc(100vh-theme(spacing.16))] max-h-screen bg-white dark:bg-gray-900">
+        <div className="flex h-screen gap-2 bg-slate-100/80 p-2 dark:bg-slate-950 sm:p-3">
             <Suspense fallback={null}>
                 <WorkspaceRepoOpenTracker />
             </Suspense>
-            <Suspense fallback={<div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} border-r border-gray-200 dark:border-gray-800 min-h-screen bg-gray-50/50 dark:bg-gray-900/50 flex items-center justify-center`}><span className="loading loading-spinner"></span></div>}>
-                <Sidebar initialCollapsed={sidebarCollapsed} />
+            <Suspense fallback={<div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 flex items-center justify-center`}><span className="loading loading-spinner"></span></div>}>
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                    <Sidebar initialCollapsed={sidebarCollapsed} className="border-r-0 bg-transparent min-h-full" />
+                </div>
             </Suspense>
-            <main className="flex-1 overflow-auto">
+            <main className="flex-1 min-w-0 overflow-auto">
                 {children}
             </main>
         </div>

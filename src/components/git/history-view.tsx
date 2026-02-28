@@ -3294,6 +3294,11 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
 
   if (!log) return <div className="flex items-center justify-center p-8 h-full opacity-70">No history data available</div>;
 
+  const headerActionButtonClass =
+    "flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100";
+  const branchSelectButtonClass =
+    "flex h-8 max-w-[24rem] items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-mono font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800";
+
   return (
     <div className="flex h-full overflow-hidden">
       {isResetOpen && (
@@ -4399,18 +4404,18 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
       )}
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-gray-900">
-        <div className="h-[57px] flex items-center justify-between gap-3 px-6 border-b border-gray-200 dark:border-gray-800 shrink-0">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <h1 className="font-bold text-lg">History</h1>
+      <div className="flex-1 flex min-w-0 flex-col gap-2 overflow-hidden">
+        <div className="flex min-h-[57px] shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <h1 className="font-bold text-lg text-slate-900 dark:text-slate-100">History</h1>
             <div className="relative" ref={branchPopoverRef}>
               <button
-                className="btn btn-sm gap-2 max-w-[24rem]"
+                className={branchSelectButtonClass}
                 onClick={() => setIsBranchPopoverOpen(prev => !prev)}
                 title={currentBranchLabel}
               >
                 <span className="truncate">{currentBranchLabel}</span>
-                <i className={cn("iconoir-nav-arrow-down text-[16px] shrink-0 transition-transform", isBranchPopoverOpen && "rotate-180")} aria-hidden="true" />
+                <i className={cn("iconoir-nav-arrow-down text-[16px] shrink-0 transition-transform opacity-60", isBranchPopoverOpen && "rotate-180")} aria-hidden="true" />
               </button>
               {isBranchPopoverOpen && (
                 <div className="absolute left-0 top-full mt-2 z-50">
@@ -4418,9 +4423,9 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
-                className="flex h-8 items-center gap-1.5 px-3 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100 transition-colors"
+                className={headerActionButtonClass}
                 onClick={() => void handleFetchFromAllRemotes()}
                 disabled={isFetchingAllRemotes || isPullingAllBranches || isPullOpen || isPushOpen}
                 title="Fetch latest changes from all remotes"
@@ -4433,7 +4438,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 Fetch
               </button>
               <button
-                className="flex h-8 items-center gap-1.5 px-3 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100 transition-colors"
+                className={headerActionButtonClass}
                 onClick={confirmPullCurrentBranch}
                 disabled={!!pullActionDisabledReason || isPullingAllBranches || isPullOpen || isPushOpen}
                 title={pullActionDisabledReason || `Pull from ${currentTrackingBranch?.upstream}`}
@@ -4446,7 +4451,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 Pull
               </button>
               <button
-                className="flex h-8 items-center gap-1.5 px-3 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100 transition-colors"
+                className={headerActionButtonClass}
                 onClick={() => void handlePullAllBranches()}
                 disabled={!!pullAllActionDisabledReason || isPullOpen || isPushOpen || isPullingAllBranches}
                 title={pullAllActionDisabledReason || 'Pull all local branches from tracking remote branches'}
@@ -4459,7 +4464,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 Pull All
               </button>
               <button
-                className="flex h-8 items-center gap-1.5 px-3 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100 transition-colors"
+                className={headerActionButtonClass}
                 onClick={confirmPushCurrentBranch}
                 disabled={!!pushActionDisabledReason || isPullingAllBranches || isPullOpen || isPushOpen}
                 title={pushActionDisabledReason || (currentTrackingBranch ? `Push to ${currentTrackingBranch.upstream}` : 'Push current branch to remote')}
@@ -4473,9 +4478,9 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
               </button>
             </div>
           </div>
-          <div className="shrink-0 flex items-center gap-2">
+          <div className="shrink-0 flex flex-wrap items-center gap-2">
             <button
-              className="flex h-8 items-center gap-1.5 px-3 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100 transition-colors"
+              className={headerActionButtonClass}
               onClick={() => void handleOpenRepoTerminal()}
               disabled={isOpeningRepoTerminal}
               title="Open terminal in repository folder"
@@ -4488,7 +4493,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
               Open Terminal
             </button>
             <button
-              className="flex h-8 items-center gap-1.5 px-3 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100 transition-colors"
+              className={headerActionButtonClass}
               onClick={() => void handleOpenRepoFolder()}
               disabled={isOpeningRepoFolder}
               title="Open repository folder in Finder"
@@ -4503,7 +4508,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden relative">
+        <div className="relative flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
           {/* Show loading spinner while branches are loading if visibility filters are set */}
           {hasVisibilityFilters && isBranchesLoading ? (
             <div className="flex items-center justify-center h-full">
@@ -4539,14 +4544,14 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
 
         {selectedHash && (
           <div
-            className="flex flex-col overflow-hidden border-t border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50"
+            className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
             style={{ height: panelHeight }}
           >
             {/* Resize handle */}
             <div
               className={cn(
-                "h-1.5 cursor-ns-resize flex items-center justify-center hover:bg-gray-200 transition-colors group shrink-0",
-                isResizing && "bg-gray-200"
+                "h-1.5 cursor-ns-resize flex items-center justify-center hover:bg-slate-100 transition-colors group shrink-0 dark:hover:bg-slate-800/60",
+                isResizing && "bg-slate-100 dark:bg-slate-800/60"
               )}
               onMouseDown={handleResizeStart}
             >
@@ -4554,7 +4559,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             </div>
 
             {/* Header with commit info */}
-            <div className="flex flex-row items-center py-2 px-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shrink-0 justify-between gap-4">
+            <div className="flex flex-row items-center py-2 px-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900 shrink-0 justify-between gap-4">
               <div className="flex items-center gap-4 flex-1 min-w-0">
                 {isCommitRangeSelection && selectedCommitRange ? (
                   <>
@@ -4580,7 +4585,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button
-                  className="ml-2 flex items-center justify-center h-8 w-8 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                  className="ml-2 flex items-center justify-center h-8 w-8 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
                   onClick={() => selectSingleCommit(null)}
                   title="Close"
                 >
@@ -4590,8 +4595,8 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             </div>
 
             {isCommitRangeSelection && selectedCommitRange ? (
-              <div className="flex-1 overflow-hidden min-h-0 flex flex-col bg-white dark:bg-gray-900">
-                <div className="px-4 pt-2 pb-1 text-[10px] uppercase tracking-wider font-bold opacity-60 border-b border-base-300 bg-base-100 shrink-0">
+              <div className="flex-1 overflow-hidden min-h-0 flex flex-col bg-white dark:bg-slate-900">
+                <div className="px-4 pt-2 pb-1 text-[10px] uppercase tracking-wider font-bold opacity-60 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900 shrink-0">
                   Changes
                 </div>
                 <div className="flex-1 min-h-0">
@@ -4606,12 +4611,12 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
               /* Combined commit message and changes content */
               <div
                 ref={commitDetailsContentRef}
-                className="flex-1 overflow-hidden bg-white dark:bg-gray-900 grid"
+                className="flex-1 overflow-hidden bg-white dark:bg-slate-900 grid"
                 style={{
                   gridTemplateRows: `${commitDetailsMessageRatio}fr 6px ${1 - commitDetailsMessageRatio}fr`,
                 }}
               >
-                <div className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 min-h-0 flex flex-col">
+                <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 min-h-0 flex flex-col">
                   <div className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-wider font-bold opacity-60">
                     Message
                   </div>
@@ -4629,15 +4634,15 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 </div>
                 <div
                   className={cn(
-                    'cursor-ns-resize flex items-center justify-center hover:bg-base-200/60 transition-colors',
-                    isCommitDetailsRatioResizing && 'bg-base-200/60'
+                    'cursor-ns-resize flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors',
+                    isCommitDetailsRatioResizing && 'bg-slate-100 dark:bg-slate-800/60'
                   )}
                   onMouseDown={handleCommitDetailsRatioResizeStart}
                 >
                   <div className="w-8 h-1 rounded-full bg-base-300" />
                 </div>
                 <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
-                  <div className="px-4 pt-2 pb-1 text-[10px] uppercase tracking-wider font-bold opacity-60 border-b border-base-300 bg-base-100 shrink-0">
+                  <div className="px-4 pt-2 pb-1 text-[10px] uppercase tracking-wider font-bold opacity-60 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900 shrink-0">
                     Changes
                   </div>
                   <div className="flex-1 min-h-0">

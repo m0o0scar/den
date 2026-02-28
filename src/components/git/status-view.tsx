@@ -122,7 +122,7 @@ function StatusFileTreeItem({
                     return (
                         <div key={child.path}>
                             <div
-                                className="flex items-center gap-1 px-2 py-1.5 text-xs rounded cursor-pointer hover:bg-base-300 transition-colors opacity-80"
+                                className="flex items-center gap-1 px-2 py-1.5 text-xs rounded cursor-pointer text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-colors"
                                 style={{ paddingLeft: `${depth * 12 + 8}px` }}
                                 onClick={() => onToggleFolder(child.path)}
                                 title={child.path}
@@ -155,8 +155,8 @@ function StatusFileTreeItem({
                     <div
                         key={filePath}
                         className={cn(
-                            'flex items-center justify-between gap-2 px-2 py-1.5 rounded-md cursor-pointer group hover:bg-base-300 transition-colors text-sm',
-                            selectedFile === filePath && 'bg-base-300 font-medium text-primary'
+                            'flex items-center justify-between gap-2 px-2 py-1.5 rounded-md cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-colors text-sm',
+                            selectedFile === filePath && 'bg-slate-100 dark:bg-slate-800/70 font-medium text-primary'
                         )}
                         style={{ paddingLeft: `${depth * 12 + 8}px` }}
                         onClick={() => onSelectFile(filePath)}
@@ -449,135 +449,143 @@ export function StatusView({ repoPath }: { repoPath: string }) {
 
     if (!status) return <div className="flex items-center justify-center h-64 opacity-70">No status data available</div>;
 
+    const headerActionButtonClass =
+        "flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100";
+
     return (
         <div className="flex h-full overflow-hidden">
-            {/* Left Panel: File List */}
-            <div className="w-64 border-r border-base-300 flex flex-col bg-base-200/30">
-                <div className="h-[57px] px-4 border-b border-base-300 flex items-center justify-between bg-base-100">
-                    <h1 className="font-bold text-lg">Changes</h1>
-                    <button className="btn btn-ghost btn-sm btn-square" onClick={() => refetch()} disabled={action.isPending} title="Refresh">
+            <div className="flex flex-1 min-w-0 flex-col gap-2 overflow-hidden">
+                <div className="flex min-h-[57px] shrink-0 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
+                    <h1 className="font-bold text-lg text-slate-900 dark:text-slate-100">Changes</h1>
+                    <button className={headerActionButtonClass} onClick={() => refetch()} disabled={action.isPending} title="Refresh status">
                         {action.isPending ? <span className="loading loading-spinner loading-xs"></span> : <i className="iconoir-refresh-circle text-[16px]" aria-hidden="true" />}
+                        Refresh
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto">
-                    {/* Unstaged Changes */}
-                    <div className="p-2">
-                        <div className="flex items-center justify-between px-2 py-2 mb-1">
-                            <h3 className="text-xs font-bold uppercase tracking-wider opacity-70">Changes ({changes.length})</h3>
-                            <div className="flex items-center gap-0.5">
-                                {changes.length === 0 && staged.length > 0 ? (
-                                    <button className="btn btn-ghost btn-xs btn-square" onClick={handleUnstageAll} title="Unstage All">
-                                        <i className="iconoir-arrow-up text-[16px]" aria-hidden="true" />
-                                    </button>
-                                ) : (
-                                    <button className="btn btn-ghost btn-xs btn-square" onClick={handleStageAll} disabled={changes.length === 0} title="Stage All">
-                                        <i className="iconoir-arrow-down text-[16px]" aria-hidden="true" />
-                                    </button>
-                                )}
-                                <button className="btn btn-ghost btn-xs btn-square" onClick={() => setStashDialogOpen(true)} disabled={changes.length === 0 && staged.length === 0} title="Stash">
-                                    <i className="iconoir-download-square text-[16px]" aria-hidden="true" />
-                                </button>
-                                <button className="btn btn-ghost btn-xs btn-square text-error hover:bg-error/10" onClick={() => setDiscardDialogOpen(true)} disabled={changes.length === 0} title="Discard All">
-                                    <i className="iconoir-trash text-[16px]" aria-hidden="true" />
-                                </button>
+                <div className="flex flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                    {/* Left Panel: File List */}
+                    <div className="w-64 border-r border-slate-200 dark:border-slate-800 flex flex-col bg-slate-50/70 dark:bg-slate-900/70">
+                        <div className="flex-1 overflow-y-auto">
+                            {/* Unstaged Changes */}
+                            <div className="p-2">
+                                <div className="flex items-center justify-between px-2 py-2 mb-1">
+                                    <h3 className="text-xs font-bold uppercase tracking-wider opacity-70">Changes ({changes.length})</h3>
+                                    <div className="flex items-center gap-0.5">
+                                        {changes.length === 0 && staged.length > 0 ? (
+                                            <button className="btn btn-ghost btn-xs btn-square" onClick={handleUnstageAll} title="Unstage All">
+                                                <i className="iconoir-arrow-up text-[16px]" aria-hidden="true" />
+                                            </button>
+                                        ) : (
+                                            <button className="btn btn-ghost btn-xs btn-square" onClick={handleStageAll} disabled={changes.length === 0} title="Stage All">
+                                                <i className="iconoir-arrow-down text-[16px]" aria-hidden="true" />
+                                            </button>
+                                        )}
+                                        <button className="btn btn-ghost btn-xs btn-square" onClick={() => setStashDialogOpen(true)} disabled={changes.length === 0 && staged.length === 0} title="Stash">
+                                            <i className="iconoir-download-square text-[16px]" aria-hidden="true" />
+                                        </button>
+                                        <button className="btn btn-ghost btn-xs btn-square text-error hover:bg-error/10" onClick={() => setDiscardDialogOpen(true)} disabled={changes.length === 0} title="Discard All">
+                                            <i className="iconoir-trash text-[16px]" aria-hidden="true" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="space-y-0.5">
+                                    {changes.length === 0 && <p className="px-2 py-2 text-xs opacity-50 italic">No changes</p>}
+                                    {changes.length > 0 && (
+                                        <StatusFileTreeItem
+                                            node={changesTree}
+                                            selectedFile={selectedFile}
+                                            expandedFolders={expandedChangeFolders}
+                                            onToggleFolder={handleToggleChangeFolder}
+                                            onSelectFile={setSelectedFile}
+                                            onActionFile={handleStage}
+                                            actionType="stage"
+                                            actionPending={action.isPending}
+                                        />
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                        <div className="space-y-0.5">
-                            {changes.length === 0 && <p className="px-2 py-2 text-xs opacity-50 italic">No changes</p>}
-                            {changes.length > 0 && (
-                                <StatusFileTreeItem
-                                    node={changesTree}
-                                    selectedFile={selectedFile}
-                                    expandedFolders={expandedChangeFolders}
-                                    onToggleFolder={handleToggleChangeFolder}
-                                    onSelectFile={setSelectedFile}
-                                    onActionFile={handleStage}
-                                    actionType="stage"
-                                    actionPending={action.isPending}
-                                />
-                            )}
+
+                            <div className="h-px bg-slate-200 dark:bg-slate-800 mx-4 my-2" />
+
+                            {/* Staged Changes */}
+                            <div className="p-2">
+                                <div className="flex items-center justify-between px-2 py-2 mb-1">
+                                    <h3 className="text-xs font-bold uppercase tracking-wider opacity-70">Staged ({staged.length})</h3>
+                                </div>
+                                <div className="space-y-0.5">
+                                    {staged.length === 0 && <p className="px-2 py-2 text-xs opacity-50 italic">No staged changes</p>}
+                                    {staged.length > 0 && (
+                                        <StatusFileTreeItem
+                                            node={stagedTree}
+                                            selectedFile={selectedFile}
+                                            expandedFolders={expandedStagedFolders}
+                                            onToggleFolder={handleToggleStagedFolder}
+                                            onSelectFile={setSelectedFile}
+                                            onActionFile={handleUnstage}
+                                            actionType="unstage"
+                                            actionPending={action.isPending}
+                                        />
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                     <div className="h-px bg-base-300 mx-4 my-2" />
-
-                    {/* Staged Changes */}
-                    <div className="p-2">
-                         <div className="flex items-center justify-between px-2 py-2 mb-1">
-                            <h3 className="text-xs font-bold uppercase tracking-wider opacity-70">Staged ({staged.length})</h3>
-                        </div>
-                        <div className="space-y-0.5">
-                            {staged.length === 0 && <p className="px-2 py-2 text-xs opacity-50 italic">No staged changes</p>}
-                            {staged.length > 0 && (
-                                <StatusFileTreeItem
-                                    node={stagedTree}
-                                    selectedFile={selectedFile}
-                                    expandedFolders={expandedStagedFolders}
-                                    onToggleFolder={handleToggleStagedFolder}
-                                    onSelectFile={setSelectedFile}
-                                    onActionFile={handleUnstage}
-                                    actionType="unstage"
-                                    actionPending={action.isPending}
-                                />
+                    {/* Right Panel: Diff View & Commit Box */}
+                    <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
+                        {/* Diff View Area */}
+                        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+                            {selectedFile ? (
+                                <div className="h-full flex flex-col">
+                                    <DiffView repoPath={repoPath} filePath={selectedFile} />
+                                </div>
+                            ) : (
+                                <div className="flex-1 flex flex-col items-center justify-center opacity-50">
+                                    <div className="p-8 rounded-full bg-slate-100 dark:bg-slate-800/60 mb-4 text-4xl">
+                                        <i className="iconoir-refresh-circle text-[32px]" aria-hidden="true" />
+                                    </div>
+                                    <p className="text-sm font-bold">Select a file to view changes</p>
+                                </div>
                             )}
                         </div>
-                    </div>
-                </div>
-            </div>
 
-            {/* Right Panel: Diff View & Commit Box */}
-            <div className="flex-1 flex flex-col bg-base-100 overflow-hidden">
-                {/* Diff View Area */}
-                <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-                    {selectedFile ? (
-                        <div className="h-full flex flex-col">
-                            <DiffView repoPath={repoPath} filePath={selectedFile} />
+                        {/* Resize Handle */}
+                        <div
+                            className="h-1.5 cursor-ns-resize flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors group shrink-0 border-t border-slate-200 dark:border-slate-800"
+                            onMouseDown={handleResizeStart}
+                        >
+                            <div className="w-8 h-1 rounded-full bg-base-300 group-hover:bg-base-content/20 transition-colors" />
                         </div>
-                    ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center opacity-50">
-                            <div className="p-8 rounded-full bg-base-200 mb-4 text-4xl">
-                                <i className="iconoir-refresh-circle text-[32px]" aria-hidden="true" />
+
+                        {/* Commit Box */}
+                        <div
+                            className="flex flex-col border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0"
+                            style={{ height: commitBoxHeight }}
+                        >
+                            <div className="flex-1 p-4 overflow-y-auto">
+                                <input
+                                    type="text"
+                                    placeholder="Commit subject..."
+                                    value={subject}
+                                    onChange={e => setSubject(e.target.value)}
+                                    onKeyDown={handleCommitShortcut}
+                                    className="input input-bordered w-full text-sm mb-2 font-sans"
+                                />
+                                <textarea
+                                    placeholder="Commit message body (optional)..."
+                                    value={body}
+                                    onChange={e => setBody(e.target.value)}
+                                    onKeyDown={handleCommitShortcut}
+                                    className="textarea textarea-bordered w-full text-sm resize-none mb-3 font-sans flex-1"
+                                    style={{ minHeight: '80px', height: 'calc(100% - 90px)' }}
+                                />
+                                <button className="btn btn-primary w-full btn-sm" onClick={handleCommit} disabled={staged.length === 0 || !subject.trim() || action.isPending}>
+                                    {action.isPending ? <span className="loading loading-spinner loading-xs mr-2"></span> : <span className="mr-2">✅</span>}
+                                    Commit Changes
+                                </button>
                             </div>
-                            <p className="text-sm font-bold">Select a file to view changes</p>
                         </div>
-                    )}
-                </div>
-
-                {/* Resize Handle */}
-                <div
-                    className="h-1.5 cursor-ns-resize flex items-center justify-center hover:bg-base-200 transition-colors group shrink-0 border-t border-base-300"
-                    onMouseDown={handleResizeStart}
-                >
-                     <div className="w-8 h-1 rounded-full bg-base-300 group-hover:bg-base-400 transition-colors" />
-                </div>
-
-                {/* Commit Box */}
-                <div
-                    className="flex flex-col border-t border-base-300 bg-base-100 shrink-0"
-                    style={{ height: commitBoxHeight }}
-                >
-                    <div className="flex-1 p-4 overflow-y-auto">
-                        <input
-                            type="text"
-                            placeholder="Commit subject..."
-                            value={subject}
-                            onChange={e => setSubject(e.target.value)}
-                            onKeyDown={handleCommitShortcut}
-                            className="input input-bordered w-full text-sm mb-2 font-sans"
-                        />
-                        <textarea
-                            placeholder="Commit message body (optional)..."
-                            value={body}
-                            onChange={e => setBody(e.target.value)}
-                            onKeyDown={handleCommitShortcut}
-                            className="textarea textarea-bordered w-full text-sm resize-none mb-3 font-sans flex-1"
-                            style={{ minHeight: '80px', height: 'calc(100% - 90px)' }}
-                        />
-                        <button className="btn btn-primary w-full btn-sm" onClick={handleCommit} disabled={staged.length === 0 || !subject.trim() || action.isPending}>
-                            {action.isPending ? <span className="loading loading-spinner loading-xs mr-2"></span> : <span className="mr-2">✅</span>}
-                            Commit Changes
-                        </button>
                     </div>
                 </div>
             </div>

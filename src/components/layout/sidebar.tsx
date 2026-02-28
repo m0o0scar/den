@@ -2,7 +2,7 @@
 
 import { cn, getRepoFolderName, getRepositoryDisplayName } from '@/lib/utils';
 import Link from 'next/link';
-import { usePathname, useSearchParams, useRouter } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import { useGitStatus, useRepository, useUpdateSettings } from '@/hooks/use-git';
 
@@ -18,7 +18,6 @@ type SidebarPropsWithInitialState = SidebarProps & {
 export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWithInitialState) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const router = useRouter();
   const repoPath = searchParams.get('path') || '';
   const repository = useRepository(repoPath || null);
   const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
@@ -29,7 +28,6 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
   // Fetch git status to get uncommitted changes count
   const { data: gitStatus } = useGitStatus(repoPath || null);
   const changesCount = gitStatus?.files?.length ?? 0;
-  const conflictsCount = gitStatus?.conflicted?.length ?? 0;
   const currentBranch = gitStatus?.current?.trim();
   const repoDisplayName = repository
     ? getRepositoryDisplayName(repository)
@@ -102,41 +100,26 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
         <div className={cn("px-3 py-2", isCollapsed && "px-2")}>
           <div className={cn("mb-6 flex items-center", isCollapsed ? "flex-col gap-2 px-0" : "justify-between px-4")}>
             {!isCollapsed && (
-              <a
+              <Link
                 href="/"
-                onClick={(e) => {
-                  if (e.metaKey || e.ctrlKey) {
-                    // Cmd/Ctrl+click: open in new tab (default behavior)
-                    return;
-                  }
-                  e.preventDefault();
-                  router.push('/');
-                }}
                 className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer text-gray-900 dark:text-gray-100 overflow-hidden"
                 title={repoDisplayName ? `${repoDisplayName} - Go to Home` : "Go to Home"}
               >
-                <img src="/icon.png" alt="Trident" className="h-5 w-5 flex-shrink-0" />
                 <h2 className="text-lg font-bold tracking-tight truncate">
                   {repoDisplayName || "Trident"}
                 </h2>
-              </a>
+              </Link>
             )}
             {isCollapsed && (
-              <a
+              <Link
                 href="/"
-                onClick={(e) => {
-                  if (e.metaKey || e.ctrlKey) {
-                    // Cmd/Ctrl+click: open in new tab (default behavior)
-                    return;
-                  }
-                  e.preventDefault();
-                  router.push('/');
-                }}
-                className="flex items-center justify-center h-8 w-8 hover:opacity-80 transition-opacity cursor-pointer"
+                className="flex items-center justify-center h-8 min-w-0 px-1 hover:opacity-80 transition-opacity cursor-pointer text-gray-900 dark:text-gray-100"
                 title={repoDisplayName ? `${repoDisplayName} - Go to Home` : "Go to Home"}
               >
-                <img src="/icon.png" alt={repoDisplayName || "Trident"} className="h-5 w-5" />
-              </a>
+                <span className="text-sm font-semibold truncate">
+                  {(repoDisplayName || "T").charAt(0).toUpperCase()}
+                </span>
+              </Link>
             )}
             <div className={cn("flex items-center gap-1", isCollapsed && "flex-col")}>
               <button
@@ -225,17 +208,6 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
         </div>
       </div>
 
-      <div className={cn("absolute bottom-4 left-0 w-full", isCollapsed ? "px-2" : "px-6")}>
-        <div className={cn("flex items-center", isCollapsed ? "justify-center" : "gap-2")}>
-          <button
-            className="flex h-8 w-8 items-center justify-center rounded-md cursor-default pointer-events-none"
-            title={isCollapsed ? "Viba Git" : undefined}
-          >
-            <i className="iconoir-git text-[20px] opacity-70" aria-hidden="true" />
-          </button>
-          {!isCollapsed && <span className="text-xs opacity-70">Viba Git Workspace</span>}
-        </div>
-      </div>
     </div>
   );
 }
