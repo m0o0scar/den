@@ -254,12 +254,20 @@ export function useGitConflictFileVersions(repoPath: string | null, filePath: st
   });
 }
 
-export function useGitLog(repoPath: string | null, limit: number = 50) {
+export function useGitLog(
+  repoPath: string | null,
+  limit: number = 50,
+  options: { scope?: 'all' | 'current' } = {},
+) {
+  const scope = options.scope ?? 'all';
+
   return useQuery<GitLog>({
-    queryKey: ['git', repoPath, 'log', limit],
+    queryKey: ['git', repoPath, 'log', limit, scope],
     queryFn: async () => {
       if (!repoPath) return null;
-      const res = await fetch(`${API_BASE}/git/log?path=${encodeURIComponent(repoPath)}&limit=${limit}`);
+      const res = await fetch(
+        `${API_BASE}/git/log?path=${encodeURIComponent(repoPath)}&limit=${limit}&scope=${scope}`
+      );
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         const err = new Error(errorData.error || 'Failed to fetch log') as GitError;
