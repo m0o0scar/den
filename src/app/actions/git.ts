@@ -158,6 +158,12 @@ type ManifestIconEntry = {
   sizes?: string;
 };
 
+type ResolvedManifestIconEntry = {
+  src: string;
+  size: number;
+  index: number;
+};
+
 function normalizeAgentCli(agentCli: string): SupportedAgentCli | null {
   if (agentCli === 'codex') {
     return agentCli;
@@ -209,6 +215,80 @@ function parseLargestManifestIconSize(icon: ManifestIconEntry): number {
     }, 0);
 }
 
+function parseManifestIconObjectSize(sizeKey: string): number {
+  const normalizedSizeKey = sizeKey.trim().toLowerCase();
+  if (!normalizedSizeKey) return 0;
+
+  const squareMatch = normalizedSizeKey.match(/^(\d+)$/);
+  if (squareMatch) {
+    const edge = Number(squareMatch[1]);
+    return Number.isFinite(edge) ? edge * edge : 0;
+  }
+
+  const rectMatch = normalizedSizeKey.match(/^(\d+)x(\d+)$/);
+  if (!rectMatch) return 0;
+
+  const width = Number(rectMatch[1]);
+  const height = Number(rectMatch[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return 0;
+  return width * height;
+}
+
+function extractManifestIconEntries(parsed: unknown): ResolvedManifestIconEntry[] {
+  if (!parsed || typeof parsed !== 'object' || !('icons' in parsed)) {
+    return [];
+  }
+
+  const rawIcons = (parsed as { icons?: unknown }).icons;
+  if (!rawIcons) return [];
+
+  const entries: ResolvedManifestIconEntry[] = [];
+  let index = 0;
+
+  if (Array.isArray(rawIcons)) {
+    for (const rawEntry of rawIcons) {
+      if (
+        rawEntry
+        && typeof rawEntry === 'object'
+        && 'src' in rawEntry
+        && typeof (rawEntry as { src?: unknown }).src === 'string'
+      ) {
+        const iconEntry = rawEntry as ManifestIconEntry;
+        const iconSource = iconEntry.src;
+        if (typeof iconSource !== 'string') {
+          index += 1;
+          continue;
+        }
+        entries.push({
+          src: iconSource,
+          size: parseLargestManifestIconSize(iconEntry),
+          index,
+        });
+      }
+      index += 1;
+    }
+    return entries;
+  }
+
+  if (typeof rawIcons === 'object') {
+    for (const [sizeKey, sourcePath] of Object.entries(rawIcons as Record<string, unknown>)) {
+      if (typeof sourcePath !== 'string') {
+        index += 1;
+        continue;
+      }
+
+      entries.push({
+        src: sourcePath,
+        size: parseManifestIconObjectSize(sizeKey),
+        index,
+      });
+      index += 1;
+    }
+  }
+
+  return entries;
+}
+
 function normalizeManifestIconSourcePath(sourcePath: string): string {
   return sourcePath.trim().replace(/[?#].*$/, '');
 }
@@ -245,28 +325,15 @@ async function resolveManifestRepoCardIcon(repoPath: string): Promise<string | n
       continue;
     }
 
-    const icons = (
-      parsed
-      && typeof parsed === 'object'
-      && 'icons' in parsed
-      && Array.isArray((parsed as { icons?: unknown }).icons)
-        ? (parsed as { icons: unknown[] }).icons
-        : []
-    ).filter((icon): icon is ManifestIconEntry => (
-      !!icon
-      && typeof icon === 'object'
-      && 'src' in icon
-      && typeof (icon as { src?: unknown }).src === 'string'
-    ));
+    const icons = extractManifestIconEntries(parsed);
 
     if (icons.length === 0) continue;
 
     const orderedIcons = icons
-      .map((icon, index) => ({ icon, index, size: parseLargestManifestIconSize(icon) }))
       .sort((a, b) => b.size - a.size || a.index - b.index);
 
-    for (const { icon } of orderedIcons) {
-      for (const candidatePath of toManifestIconCandidatePaths(repoPath, manifestPath, icon.src || '')) {
+    for (const icon of orderedIcons) {
+      for (const candidatePath of toManifestIconCandidatePaths(repoPath, manifestPath, icon.src)) {
         if (await fileExistsAsRepoCardIcon(candidatePath)) {
           return candidatePath;
         }
