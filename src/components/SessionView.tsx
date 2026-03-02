@@ -24,6 +24,13 @@ import { normalizePreviewUrl } from '@/lib/url';
 import { sanitizeBranchName } from '@/lib/utils';
 import { useTerminalLink, type TerminalWindow } from '@/hooks/useTerminalLink';
 import { quoteShellArg } from '@/lib/shell';
+import {
+    applyThemeToTerminalIframe,
+    applyThemeToTerminalWindow,
+    readThemeModeFromStorage,
+    THEME_MODE_STORAGE_KEY,
+    THEME_REFRESH_EVENT,
+} from '@/lib/ttyd-theme';
 
 const SUPPORTED_IDES = [
     { id: 'vscode', name: 'VS Code', protocol: 'vscode' },
@@ -56,51 +63,6 @@ const TERMINAL_HEADER_HEIGHT = 36;
 const TERMINAL_BOOTSTRAP_STORAGE_PREFIX = 'viba:terminal-bootstrap:';
 const TERMINAL_BOOTSTRAP_RUNTIME_KEY = '__vibaTerminalBootstrapRegistry';
 const SHELL_PROMPT_PATTERN = /(?:\$|%|#|>) $/;
-const TERMINAL_THEME_LIGHT = {
-    background: '#ffffff',
-    foreground: '#0f172a', // slate-900
-    cursor: '#0f172a',
-    selectionBackground: 'rgba(59, 130, 246, 0.4)',
-    black: '#000000',
-    red: '#cd3131',
-    green: '#00BC00',
-    yellow: '#949800',
-    blue: '#0451a5',
-    magenta: '#bc05bc',
-    cyan: '#0598bc',
-    white: '#555555',
-    brightBlack: '#666666',
-    brightRed: '#cd3131',
-    brightGreen: '#14CE14',
-    brightYellow: '#b5ba00',
-    brightBlue: '#0451a5',
-    brightMagenta: '#bc05bc',
-    brightCyan: '#0598bc',
-    brightWhite: '#a5a5a5'
-};
-
-const TERMINAL_THEME_DARK = {
-    background: '#0d1117',
-    foreground: '#e6edf3',
-    cursor: '#e6edf3',
-    selectionBackground: 'rgba(59, 130, 246, 0.4)',
-    black: '#484f58',
-    red: '#ff7b72',
-    green: '#3fb950',
-    yellow: '#d29922',
-    blue: '#58a6ff',
-    magenta: '#bc8cff',
-    cyan: '#39c5cf',
-    white: '#b1bac4',
-    brightBlack: '#6e7681',
-    brightRed: '#ffa198',
-    brightGreen: '#56d364',
-    brightYellow: '#e3b341',
-    brightBlue: '#79c0ff',
-    brightMagenta: '#d2a8ff',
-    brightCyan: '#56d4dd',
-    brightWhite: '#ffffff'
-};
 
 const PLAN_MODE_STARTUP_INSTRUCTION =
     'Plan mode: inspect the relevant code first, present a concrete implementation plan, and wait for explicit user approval before any file edits or write commands.';
@@ -275,6 +237,7 @@ export function SessionView({
     const previewAddressInputRef = useRef<HTMLInputElement>(null);
     const splitContainerRef = useRef<HTMLDivElement>(null);
     const splitResizeRef = useRef({ startX: 0, startRatio: DEFAULT_AGENT_PANE_RATIO });
+    const recentTerminalBlurRef = useRef<{ slot: TerminalBootstrapSlot; at: number } | null>(null);
     const agentFrameLinkCleanupRef = useRef<(() => void) | null>(null);
     const terminalFrameLinkCleanupRef = useRef<(() => void) | null>(null);
     const terminalProcessMonitorCleanupRef = useRef<(() => void) | null>(null);
@@ -600,46 +563,86 @@ export function SessionView({
 
     const [isTerminalMinimized, setIsTerminalMinimized] = useState(false);
 
-    const [isDarkMode, setIsDarkMode] = useState(false);
-
-    useEffect(() => {
-        // Initial check
-        setIsDarkMode(document.documentElement.classList.contains('dark'));
-
-        // Observer for class changes on html element
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                if (mutation.attributeName === 'class') {
-                    setIsDarkMode(document.documentElement.classList.contains('dark'));
-                }
-            });
-        });
-
-        observer.observe(document.documentElement, { attributes: true });
-
-        return () => observer.disconnect();
+    const focusTerminalInputForSlot = useCallback((slot: TerminalBootstrapSlot): boolean => {
+        const iframe = slot === 'agent' ? iframeRef.current : terminalRef.current;
+        if (!iframe) return false;
+        try {
+            const frameWindow = iframe.contentWindow;
+            const textarea = iframe.contentDocument?.querySelector('textarea.xterm-helper-textarea') as HTMLElement | null;
+            frameWindow?.focus();
+            if (!textarea || typeof textarea.focus !== 'function') return false;
+            try {
+                textarea.focus({ preventScroll: true });
+            } catch {
+                textarea.focus();
+            }
+            return true;
+        } catch {
+            return false;
+        }
     }, []);
 
-    // Apply terminal theme based on dark mode state
+    const maybeRestoreRecentTerminalFocusAfterThemeChange = useCallback(() => {
+        const recentBlur = recentTerminalBlurRef.current;
+        if (!recentBlur) return;
+        if (Date.now() - recentBlur.at > 1500) return;
+
+        const preferredSlot = recentBlur.slot;
+        window.setTimeout(() => {
+            const restored = focusTerminalInputForSlot(preferredSlot);
+            if (!restored) {
+                focusTerminalInputForSlot(preferredSlot === 'agent' ? 'terminal' : 'agent');
+            }
+            recentTerminalBlurRef.current = null;
+        }, 0);
+    }, [focusTerminalInputForSlot]);
+
+    const applyThemeToTerminalFrames = useCallback(() => {
+        applyThemeToTerminalIframe(iframeRef.current);
+        applyThemeToTerminalIframe(terminalRef.current);
+        maybeRestoreRecentTerminalFocusAfterThemeChange();
+    }, [maybeRestoreRecentTerminalFocusAfterThemeChange]);
+
     useEffect(() => {
-        const applyTheme = (iframe: HTMLIFrameElement | null) => {
-            if (!iframe) return;
-            try {
-                const win = iframe.contentWindow as TerminalWindow | null;
-                if (win && win.term) {
-                    win.term.options.theme = {
-                        ...(win.term.options.theme || {}),
-                        ...(isDarkMode ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT)
-                    };
-                }
-            } catch (e) {
-                // Ignore transient iframe access errors
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        const applyTheme = () => {
+            applyThemeToTerminalFrames();
+        };
+        const handleMediaChange = () => {
+            if (readThemeModeFromStorage(window.localStorage) === 'auto') {
+                applyTheme();
             }
         };
+        const handleStorageChange = (event: StorageEvent) => {
+            if (!event.key || event.key === THEME_MODE_STORAGE_KEY) {
+                applyTheme();
+            }
+        };
+        const handleThemeRefresh = () => {
+            applyTheme();
+        };
 
-        applyTheme(iframeRef.current);
-        applyTheme(terminalRef.current);
-    }, [isDarkMode]);
+        applyTheme();
+        window.addEventListener('storage', handleStorageChange);
+        window.addEventListener(THEME_REFRESH_EVENT, handleThemeRefresh);
+
+        if (typeof mediaQuery.addEventListener === 'function') {
+            mediaQuery.addEventListener('change', handleMediaChange);
+        } else {
+            mediaQuery.addListener(handleMediaChange);
+        }
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            window.removeEventListener(THEME_REFRESH_EVENT, handleThemeRefresh);
+
+            if (typeof mediaQuery.removeEventListener === 'function') {
+                mediaQuery.removeEventListener('change', handleMediaChange);
+            } else {
+                mediaQuery.removeListener(handleMediaChange);
+            }
+        };
+    }, [applyThemeToTerminalFrames]);
 
     // Terminal resize state
     const [terminalSize, setTerminalSize] = useState({ width: 460, height: 320 });
@@ -1711,13 +1714,8 @@ export function SessionView({
                         terminalWithShortcutState.__vibaClearLineShortcutInstalled = true;
                     }
 
-                    // Set selection highlight color via xterm.js 5 theme API (canvas renderer)
-                    try {
-                        term.options.theme = {
-                            ...(term.options.theme || {}),
-                            ...(isDarkMode ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT)
-                        };
-                    } catch { /* ignore if API unavailable */ }
+                    // Ensure terminal palette stays in sync with app/OS theme.
+                    applyThemeToTerminalWindow(win);
 
                     const alreadyBootstrapped = hasTerminalBootstrapped('agent');
                     const shouldSkipResumeInjection = Boolean(isResume) && terminalPersistenceMode === 'tmux';
@@ -1938,13 +1936,8 @@ export function SessionView({
                         modifierOpenBehavior: 'new_tab',
                     });
 
-                    // Set selection highlight color via xterm.js 5 theme API (canvas renderer)
-                    try {
-                        term.options.theme = {
-                            ...(term.options.theme || {}),
-                            ...(isDarkMode ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT)
-                        };
-                    } catch { /* ignore if API unavailable */ }
+                    // Ensure terminal palette stays in sync with app/OS theme.
+                    applyThemeToTerminalWindow(win);
 
                     startTerminalProcessMonitor(iframe, term);
 
@@ -2378,6 +2371,12 @@ export function SessionView({
                         src={agentTerminalSrc}
                         className={`h-full w-full border-none ${(isResizing || isSplitResizing) ? 'pointer-events-none' : ''}`}
                         allow="clipboard-read; clipboard-write"
+                        onFocus={() => {
+                            recentTerminalBlurRef.current = null;
+                        }}
+                        onBlur={() => {
+                            recentTerminalBlurRef.current = { slot: 'agent', at: Date.now() };
+                        }}
                         onLoad={handleIframeLoad}
                     />
                 </div>
@@ -2583,6 +2582,12 @@ export function SessionView({
                                                 src={floatingTerminalSrc}
                                                 className={`h-full w-full border-none ${(isResizing || isSplitResizing) ? 'pointer-events-none' : ''}`}
                                                 allow="clipboard-read; clipboard-write"
+                                                onFocus={() => {
+                                                    recentTerminalBlurRef.current = null;
+                                                }}
+                                                onBlur={() => {
+                                                    recentTerminalBlurRef.current = { slot: 'terminal', at: Date.now() };
+                                                }}
                                                 onLoad={(event) => handleTerminalLoad(event.currentTarget)}
                                             />
                                         </div>
