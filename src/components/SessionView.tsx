@@ -21,7 +21,13 @@ import { notifySessionsUpdated } from '@/lib/session-updates';
 import { buildTtydTerminalSrc } from '@/lib/terminal-session';
 import { normalizePreviewUrl } from '@/lib/url';
 import { useTerminalLink, type TerminalWindow } from '@/hooks/useTerminalLink';
-import { quoteShellArg } from '@/lib/shell';
+import {
+    buildCdCommand,
+    buildPromptArgumentFromFile,
+    quoteShellArgForDialect,
+    type ShellDialect,
+    wrapCodexCommandWithApiKeyLogin,
+} from '@/lib/shell';
 
 const SUPPORTED_IDES = [
     { id: 'vscode', name: 'VS Code', protocol: 'vscode' },
@@ -287,6 +293,18 @@ export function SessionView({
         () => floatingTerminalSrcOverride || buildTtydTerminalSrc(sessionName, 'terminal'),
         [floatingTerminalSrcOverride, sessionName],
     );
+    const terminalShellDialect = useMemo<ShellDialect>(() => {
+        if (terminalPersistenceMode === 'tmux') {
+            return 'posix';
+        }
+
+        const targetPath = worktree || repo;
+        if (isWindowsAbsolutePath(targetPath) || targetPath.includes('\\')) {
+            return 'powershell';
+        }
+
+        return 'posix';
+    }, [repo, terminalPersistenceMode, worktree]);
 
     const terminalBootstrapStateRef = useRef<Record<TerminalBootstrapSlot, TerminalBootstrapState>>({
         agent: 'idle',
@@ -1686,7 +1704,7 @@ export function SessionView({
                     // 2. dispatch keypress 13
 
                     const targetPath = worktree || repo; // Fallback to repo if no worktree
-                    const cmd = `cd ${quoteShellArg(targetPath)}`;
+                    const cmd = buildCdCommand(targetPath, terminalShellDialect);
                     // Send cd command
                     term.paste(cmd);
 
@@ -1714,13 +1732,10 @@ export function SessionView({
                     if (agent) {
                         const startAgentProcess = async () => {
                             let agentCmd = '';
-                            const withCodexApiKeyLogin = (command: string): string => {
-                                return `if [ -n "$OPENAI_API_KEY" ]; then printenv OPENAI_API_KEY | codex login --with-api-key || exit 1; fi; ${command}`;
-                            };
 
                             if (isResume) {
                                 const resumeCmd = `codex resume --last --sandbox danger-full-access --ask-for-approval on-request --search`;
-                                agentCmd = withCodexApiKeyLogin(resumeCmd);
+                                agentCmd = wrapCodexCommandWithApiKeyLogin(resumeCmd, terminalShellDialect);
                             } else {
                                 const trimmedInitialMessage = initialMessage?.trim() || '';
                                 const taskContent = trimmedInitialMessage;
@@ -1776,19 +1791,19 @@ export function SessionView({
                                     try {
                                         const result = await writeSessionPromptFile(sessionName, fullMessage);
                                         if (result.success && result.filePath) {
-                                            safeMessage = ` "$(cat ${quoteShellArg(result.filePath)})"`;
+                                            safeMessage = buildPromptArgumentFromFile(result.filePath, terminalShellDialect);
                                         } else {
                                             console.error('Failed to write prompt file, falling back to inline prompt', result.error);
-                                            safeMessage = ` ${quoteShellArg(fullMessage)}`;
+                                            safeMessage = ` ${quoteShellArgForDialect(fullMessage, terminalShellDialect)}`;
                                         }
                                     } catch (err) {
                                         console.error('Exception writing prompt file', err);
-                                        safeMessage = ` ${quoteShellArg(fullMessage)}`;
+                                        safeMessage = ` ${quoteShellArgForDialect(fullMessage, terminalShellDialect)}`;
                                     }
                                 }
 
                                 const startCmd = `codex --sandbox danger-full-access --ask-for-approval on-request --search${safeMessage}`;
-                                agentCmd = withCodexApiKeyLogin(startCmd);
+                                agentCmd = wrapCodexCommandWithApiKeyLogin(startCmd, terminalShellDialect);
                             }
 
                             if (agentCmd) {
@@ -1939,7 +1954,7 @@ export function SessionView({
                     }
 
                     const targetPath = worktree || repo;
-                    const cmd = `cd ${quoteShellArg(targetPath)}`;
+                    const cmd = buildCdCommand(targetPath, terminalShellDialect);
                     term.paste(cmd);
 
                     const pressEnter = () => {
