@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { createKeytarLoader, type KeytarModule } from './keytar-loader';
 
 const SERVICE_NAME = 'viba-agent-api-credentials';
 const CONFIGS_FILE_NAME = 'agent-api-configs.json';
@@ -29,50 +30,10 @@ type AgentApiCredentialMetadata = {
   keytarAccount?: string;
 };
 
-type KeytarModule = {
-  getPassword(service: string, account: string): Promise<string | null>;
-  setPassword(service: string, account: string, password: string): Promise<void>;
-  deletePassword(service: string, account: string): Promise<boolean>;
-};
-
-let keytarPromise: Promise<KeytarModule | null> | null = null;
-let keytarUnavailableReason: string | null = null;
-let didLogKeytarWarning = false;
+const { loadKeytar, requireKeytar } = createKeytarLoader({ logLabel: 'agent-api-credentials' });
 
 function isSupportedAgentApi(value: string): value is AgentApiCredentialAgent {
   return SUPPORTED_AGENT_APIS.includes(value as AgentApiCredentialAgent);
-}
-
-function keytarUnavailableMessage(): string {
-  if (keytarUnavailableReason) {
-    return `Secure credential storage is unavailable: ${keytarUnavailableReason}`;
-  }
-  return 'Secure credential storage is unavailable in this runtime.';
-}
-
-async function loadKeytar(): Promise<KeytarModule | null> {
-  if (!keytarPromise) {
-    keytarPromise = import('keytar')
-      .then((module) => (module.default ?? module) as KeytarModule)
-      .catch((error: unknown) => {
-        keytarUnavailableReason = error instanceof Error ? error.message : String(error);
-        if (!didLogKeytarWarning) {
-          didLogKeytarWarning = true;
-          console.warn(`[agent-api-credentials] ${keytarUnavailableMessage()}`);
-        }
-        return null;
-      });
-  }
-
-  return keytarPromise;
-}
-
-async function requireKeytar(): Promise<KeytarModule> {
-  const keytar = await loadKeytar();
-  if (!keytar) {
-    throw new Error(keytarUnavailableMessage());
-  }
-  return keytar;
 }
 
 function getDefaultKeytarAccount(agent: AgentApiCredentialAgent): string {
