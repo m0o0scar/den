@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { createKeytarLoader, type KeytarModule } from './keytar-loader';
 
 const SERVICE_NAME = 'viba-git-credentials';
 const CREDENTIALS_FILE_NAME = 'credentials.json';
@@ -44,47 +45,7 @@ type LegacyCredentialMetadata = {
   updatedAt: string;
 };
 
-type KeytarModule = {
-  getPassword(service: string, account: string): Promise<string | null>;
-  setPassword(service: string, account: string, password: string): Promise<void>;
-  deletePassword(service: string, account: string): Promise<boolean>;
-};
-
-let keytarPromise: Promise<KeytarModule | null> | null = null;
-let keytarUnavailableReason: string | null = null;
-let didLogKeytarWarning = false;
-
-function keytarUnavailableMessage(): string {
-  if (keytarUnavailableReason) {
-    return `Secure credential storage is unavailable: ${keytarUnavailableReason}`;
-  }
-  return 'Secure credential storage is unavailable in this runtime.';
-}
-
-async function loadKeytar(): Promise<KeytarModule | null> {
-  if (!keytarPromise) {
-    keytarPromise = import('keytar')
-      .then((module) => (module.default ?? module) as KeytarModule)
-      .catch((error: unknown) => {
-        keytarUnavailableReason = error instanceof Error ? error.message : String(error);
-        if (!didLogKeytarWarning) {
-          didLogKeytarWarning = true;
-          console.warn(`[credentials] ${keytarUnavailableMessage()}`);
-        }
-        return null;
-      });
-  }
-
-  return keytarPromise;
-}
-
-async function requireKeytar(): Promise<KeytarModule> {
-  const keytar = await loadKeytar();
-  if (!keytar) {
-    throw new Error(keytarUnavailableMessage());
-  }
-  return keytar;
-}
+const { loadKeytar, requireKeytar } = createKeytarLoader({ logLabel: 'credentials' });
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -569,4 +530,3 @@ export async function findCredentialForRemote(remoteUrl: string): Promise<{ cred
 
   return null;
 }
-
