@@ -1,27 +1,17 @@
-'use client';
+import type { Metadata } from 'next';
+import { getRepoFolderName } from '@/lib/utils';
+import ChangesContentWrapper from './changes-content';
 
-import { useSearchParams } from 'next/navigation';
-import { StatusView } from '@/components/git/status-view';
-import { Suspense } from 'react';
-import { useWorkspaceTitle } from '@/hooks/use-workspace-title';
+type PageProps = {
+    searchParams: Promise<{ path?: string }>;
+};
 
-function WorkspaceChangesContent() {
-  const searchParams = useSearchParams();
-  const repoPath = searchParams.get('path');
-
-  useWorkspaceTitle(repoPath, 'Changes');
-
-  if (!repoPath) {
-    return <div className="p-8">No repository path specified.</div>;
-  }
-
-  return <StatusView repoPath={repoPath} />;
+export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
+    const { path: repoPath } = await searchParams;
+    const repoName = repoPath ? getRepoFolderName(repoPath) : 'Workspace';
+    return { title: { absolute: `${repoName} | Changes` } };
 }
 
 export default function WorkspaceChangesPage() {
-  return (
-    <Suspense fallback={<div className="flex items-center justify-center h-full"><span className="loading loading-spinner"></span></div>}>
-      <WorkspaceChangesContent />
-    </Suspense>
-  );
+    return <ChangesContentWrapper />;
 }

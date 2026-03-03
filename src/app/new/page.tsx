@@ -1,6 +1,11 @@
+import type { Metadata } from 'next';
 import GitRepoSelector from '@/components/GitRepoSelector';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+
+export const metadata: Metadata = {
+  title: 'New Session',
+};
 
 type PredefinedPrompt = {
   id: string;

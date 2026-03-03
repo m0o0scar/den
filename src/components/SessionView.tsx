@@ -859,18 +859,6 @@ export function SessionView({
     // IDE Selection
     const [selectedIde, setSelectedIde] = useState<string>('vscode');
 
-    useEffect(() => {
-        const trimmedTitle = title?.trim();
-        if (trimmedTitle) {
-            document.title = `${trimmedTitle} | Palx`;
-            return () => {
-                document.title = 'Palx';
-            };
-        }
-
-        document.title = 'Palx';
-        return undefined;
-    }, [title]);
 
     useEffect(() => {
         const loadConfig = async () => {

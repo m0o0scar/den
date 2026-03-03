@@ -1,27 +1,17 @@
-'use client';
+import type { Metadata } from 'next';
+import { getRepoFolderName } from '@/lib/utils';
+import HistoryContentWrapper from './history-content';
 
-import { useSearchParams } from 'next/navigation';
-import { HistoryView } from '@/components/git/history-view';
-import { Suspense } from 'react';
-import { useWorkspaceTitle } from '@/hooks/use-workspace-title';
+type PageProps = {
+    searchParams: Promise<{ path?: string }>;
+};
 
-function WorkspaceHistoryContent() {
-  const searchParams = useSearchParams();
-  const repoPath = searchParams.get('path');
-
-  useWorkspaceTitle(repoPath, 'History');
-
-  if (!repoPath) {
-    return <div className="p-8">No repository path specified.</div>;
-  }
-
-  return <HistoryView repoPath={repoPath} />;
+export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
+    const { path: repoPath } = await searchParams;
+    const repoName = repoPath ? getRepoFolderName(repoPath) : 'Workspace';
+    return { title: { absolute: `${repoName} | History` } };
 }
 
 export default function WorkspacePage() {
-  return (
-    <Suspense fallback={<div className="flex items-center justify-center h-full"><span className="loading loading-spinner"></span></div>}>
-      <WorkspaceHistoryContent />
-    </Suspense>
-  );
+    return <HistoryContentWrapper />;
 }
