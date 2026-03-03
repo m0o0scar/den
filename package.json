@@ -27,7 +27,6 @@
     "build": "next build",
     "prepack": "rm -rf .next && npm run build",
     "start": "node ./bin/viba.mjs",
-    "tunnel": "npx nport 3200 -s palx",
     "lint": "eslint",
     "test": "node --experimental-strip-types --test src/**/*.test.ts test/**/*.test.mjs",
     "cli": "node ./bin/viba.mjs",
