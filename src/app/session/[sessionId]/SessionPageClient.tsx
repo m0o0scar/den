@@ -262,9 +262,7 @@ export default function SessionPage() {
 
     const handleExit = (force?: boolean) => {
         if (force) {
-            // Force a full page navigation — used after cleanup where
-            // router.push can get stuck due to iframe teardown state
-            window.location.href = '/';
+            router.replace('/');
         } else {
             router.push('/');
         }

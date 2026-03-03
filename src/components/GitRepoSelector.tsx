@@ -173,8 +173,8 @@ export default function GitRepoSelector({
   const navigateToSession = useCallback((sessionName: string) => {
     sessionNavigationCommittedRef.current = true;
     recordPendingSessionNavigation(sessionName);
-    window.location.assign(`/session/${encodeURIComponent(sessionName)}`);
-  }, []);
+    router.push(`/session/${encodeURIComponent(sessionName)}`);
+  }, [router]);
 
   const refreshSessionData = useCallback(async (repo: string | null = selectedRepo) => {
     try {
@@ -370,15 +370,10 @@ export default function GitRepoSelector({
       void refreshSessionData(repoForList);
     };
 
-    const handleFocus = () => {
-      refresh();
-    };
-
     const unsubscribeSessionsUpdated = subscribeToSessionsUpdated(refresh);
-    window.addEventListener('focus', handleFocus);
+    refresh();
 
     return () => {
-      window.removeEventListener('focus', handleFocus);
       unsubscribeSessionsUpdated();
     };
   }, [mode, refreshSessionData, selectedRepo]);
@@ -506,8 +501,8 @@ export default function GitRepoSelector({
     if (sessionNavigationCommittedRef.current) return;
 
     sessionNavigationCommittedRef.current = true;
-    window.location.replace(`/session/${encodeURIComponent(retrySessionName)}`);
-  }, [mode]);
+    router.replace(`/session/${encodeURIComponent(retrySessionName)}`);
+  }, [mode, router]);
 
   useEffect(() => {
     if (mode !== 'new') return;

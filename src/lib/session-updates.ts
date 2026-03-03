@@ -1,10 +1,107 @@
 export const SESSIONS_UPDATED_EVENT = 'viba:sessions-updated';
 const SESSIONS_UPDATED_CHANNEL = 'viba:sessions-updated';
 const SESSIONS_UPDATED_TAB_ID_KEY = '__vibaSessionsUpdatedTabId';
+const SESSION_LIST_SOCKET_ENDPOINT = '/api/notifications/session-list/socket';
+
+type SessionListUpdatedPayload = {
+  type: 'session-list-updated';
+  timestamp?: string;
+};
 
 type SessionsUpdatedPayload = {
   sourceTabId?: string;
 };
+
+const listeners = new Set<() => void>();
+let socket: WebSocket | null = null;
+let reconnectTimer: number | null = null;
+let reconnectAttempt = 0;
+let isConnecting = false;
+
+function clearReconnectTimer(): void {
+  if (reconnectTimer === null) return;
+  window.clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+}
+
+function dispatchListeners(): void {
+  for (const listener of listeners) {
+    listener();
+  }
+}
+
+function scheduleReconnect(): void {
+  if (typeof window === 'undefined') return;
+  if (listeners.size === 0) return;
+  if (reconnectTimer !== null) return;
+
+  const delay = Math.min(10000, 500 * (2 ** reconnectAttempt));
+  reconnectAttempt += 1;
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null;
+    void ensureSessionListSocketConnected();
+  }, delay);
+}
+
+async function ensureSessionListSocketConnected(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if (listeners.size === 0) return;
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+  if (isConnecting) return;
+
+  isConnecting = true;
+  try {
+    const response = await fetch(SESSION_LIST_SOCKET_ENDPOINT, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error('Failed to initialize session list socket');
+    }
+    const data = await response.json() as { wsUrl?: string };
+    const wsUrl = data.wsUrl?.trim();
+    if (!wsUrl) {
+      throw new Error('Session list websocket URL is missing');
+    }
+
+    const nextSocket = new WebSocket(wsUrl);
+    socket = nextSocket;
+    nextSocket.onopen = () => {
+      reconnectAttempt = 0;
+      clearReconnectTimer();
+    };
+    nextSocket.onerror = () => {
+      nextSocket.close();
+    };
+    nextSocket.onclose = () => {
+      if (socket === nextSocket) {
+        socket = null;
+      }
+      scheduleReconnect();
+    };
+    nextSocket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data as string) as Partial<SessionListUpdatedPayload>;
+        if (payload.type !== 'session-list-updated') return;
+        dispatchListeners();
+      } catch {
+        // Ignore malformed update payloads.
+      }
+    };
+  } catch {
+    scheduleReconnect();
+  } finally {
+    isConnecting = false;
+  }
+}
+
+function maybeCloseSessionListSocket(): void {
+  if (listeners.size > 0) return;
+  clearReconnectTimer();
+  reconnectAttempt = 0;
+  isConnecting = false;
+  socket?.close();
+  socket = null;
+}
 
 function getCurrentTabId(): string {
   if (typeof window === 'undefined') return 'server';
@@ -41,6 +138,9 @@ export function subscribeToSessionsUpdated(listener: () => void): () => void {
     return () => { };
   }
 
+  listeners.add(listener);
+  void ensureSessionListSocketConnected();
+
   const currentTabId = getCurrentTabId();
   const handleLocalEvent = () => {
     listener();
@@ -65,10 +165,12 @@ export function subscribeToSessionsUpdated(listener: () => void): () => void {
   }
 
   return () => {
+    listeners.delete(listener);
     window.removeEventListener(SESSIONS_UPDATED_EVENT, handleLocalEvent);
     if (channel && channelListener) {
       channel.removeEventListener('message', channelListener);
     }
     channel?.close();
+    maybeCloseSessionListSocket();
   };
 }

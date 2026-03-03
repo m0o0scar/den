@@ -7,6 +7,7 @@ import simpleGit from 'simple-git';
 import { getErrorMessage } from '../../lib/error-utils';
 import { prepareSessionWorktree, removeWorktree, terminateSessionTerminalSessions } from './git';
 import { getLocalDb } from '@/lib/local-db';
+import { publishSessionListUpdated } from '@/lib/sessionNotificationServer';
 
 export type SessionMetadata = {
   sessionName: string;
@@ -433,6 +434,11 @@ export async function createSession(
     };
 
     await saveSessionMetadata(sessionData);
+    try {
+      await publishSessionListUpdated();
+    } catch (notificationError) {
+      console.warn('Failed to publish session list update after create:', notificationError);
+    }
 
     return result;
   } catch (e: unknown) {
@@ -477,6 +483,11 @@ export async function deleteSession(sessionName: string): Promise<{ success: boo
     const promptsDir = await getSessionPromptsDir();
     const promptFilePath = path.join(promptsDir, `${sessionName}.txt`);
     await fs.rm(promptFilePath, { force: true });
+    try {
+      await publishSessionListUpdated();
+    } catch (notificationError) {
+      console.warn('Failed to publish session list update after delete:', notificationError);
+    }
 
     return { success: true };
   } catch (e: unknown) {

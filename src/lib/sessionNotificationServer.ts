@@ -10,6 +10,7 @@ type SessionNotificationServerState = {
   server: http.Server;
   socketServer: WebSocketServer;
   sessionSockets: Map<string, Set<WebSocket>>;
+  sessionListSockets: Set<WebSocket>;
 };
 
 export type SessionNotificationPayload = {
@@ -17,6 +18,11 @@ export type SessionNotificationPayload = {
   sessionId: string;
   title: string;
   description: string;
+  timestamp: string;
+};
+
+export type SessionListUpdatedPayload = {
+  type: 'session-list-updated';
   timestamp: string;
 };
 
@@ -30,6 +36,16 @@ function parseSessionIdFromRequest(request: IncomingMessage): string | null {
     const requestUrl = new URL(request.url || '/', `ws://${NOTIFICATION_SERVER_HOST}`);
     const sessionId = requestUrl.searchParams.get('sessionId')?.trim();
     return sessionId || null;
+  } catch {
+    return null;
+  }
+}
+
+function parseChannelFromRequest(request: IncomingMessage): string | null {
+  try {
+    const requestUrl = new URL(request.url || '/', `ws://${NOTIFICATION_SERVER_HOST}`);
+    const channel = requestUrl.searchParams.get('channel')?.trim();
+    return channel || null;
   } catch {
     return null;
   }
@@ -65,9 +81,22 @@ function detachSocketFromSession(
 
 async function createSessionNotificationServer(): Promise<SessionNotificationServerState> {
   const sessionSockets = new Map<string, Set<WebSocket>>();
+  const sessionListSockets = new Set<WebSocket>();
   const socketServer = new WebSocketServer({ noServer: true });
 
   socketServer.on('connection', (socket, request) => {
+    const channel = parseChannelFromRequest(request);
+    if (channel === 'session-list') {
+      sessionListSockets.add(socket);
+      socket.on('close', () => {
+        sessionListSockets.delete(socket);
+      });
+      socket.on('error', () => {
+        sessionListSockets.delete(socket);
+      });
+      return;
+    }
+
     const sessionId = parseSessionIdFromRequest(request);
     if (!sessionId) {
       socket.close(1008, 'sessionId query parameter is required');
@@ -120,6 +149,7 @@ async function createSessionNotificationServer(): Promise<SessionNotificationSer
     server,
     socketServer,
     sessionSockets,
+    sessionListSockets,
   };
 }
 
@@ -159,6 +189,12 @@ export async function ensureSessionNotificationServer(): Promise<{ wsBaseUrl: st
 export function buildSessionNotificationWsUrl(wsBaseUrl: string, sessionId: string): string {
   const url = new URL(wsBaseUrl);
   url.searchParams.set('sessionId', sessionId);
+  return url.toString();
+}
+
+export function buildSessionListNotificationWsUrl(wsBaseUrl: string): string {
+  const url = new URL(wsBaseUrl);
+  url.searchParams.set('channel', 'session-list');
   return url.toString();
 }
 
@@ -212,6 +248,42 @@ export async function publishSessionNotification(input: {
 
   if (sockets.size === 0) {
     state.sessionSockets.delete(sessionId);
+  }
+
+  return delivered;
+}
+
+export async function publishSessionListUpdated(): Promise<number> {
+  const state = await getSessionNotificationServerState();
+  if (state.sessionListSockets.size === 0) {
+    return 0;
+  }
+
+  const payload: SessionListUpdatedPayload = {
+    type: 'session-list-updated',
+    timestamp: new Date().toISOString(),
+  };
+  const serializedPayload = JSON.stringify(payload);
+
+  let delivered = 0;
+  const staleSockets: WebSocket[] = [];
+
+  for (const socket of state.sessionListSockets) {
+    if (socket.readyState !== WebSocket.OPEN) {
+      staleSockets.push(socket);
+      continue;
+    }
+
+    try {
+      socket.send(serializedPayload);
+      delivered += 1;
+    } catch {
+      staleSockets.push(socket);
+    }
+  }
+
+  for (const staleSocket of staleSockets) {
+    state.sessionListSockets.delete(staleSocket);
   }
 
   return delivered;
