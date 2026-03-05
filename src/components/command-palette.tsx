@@ -1,39 +1,58 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Repository } from '@/lib/types';
-import { useRepositories } from '@/hooks/use-git';
-import { cn, getRepositoryDisplayName } from '@/lib/utils';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { getConfig } from '@/app/actions/config';
+import { getBaseName } from '@/lib/path';
+import { buildCommandPaletteRepoNavigation } from '@/lib/command-palette-routing';
+import { cn } from '@/lib/utils';
 import { useEscapeDismiss } from '@/hooks/use-escape-dismiss';
 
-function sortByLastOpenedDesc(a: Repository, b: Repository) {
-  return new Date(b.lastOpenedAt || 0).getTime() - new Date(a.lastOpenedAt || 0).getTime();
-}
+type CommandPaletteRepoItem = {
+  path: string;
+  displayName: string;
+};
 
 export function CommandPalette() {
   const router = useRouter();
-  const { data: repositories } = useRepositories();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [recentRepos, setRecentRepos] = useState<string[]>([]);
+  const [repoAliases, setRepoAliases] = useState<Record<string, string | null | undefined>>({});
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const recentRepositories = useMemo(
-    () =>
-      (repositories || [])
-        .filter((repo) => Boolean(repo.lastOpenedAt))
-        .sort(sortByLastOpenedDesc)
-        .slice(0, 5),
-    [repositories]
-  );
+  const loadRecentRepos = useCallback(async () => {
+    try {
+      const config = await getConfig();
+      setRecentRepos(config.recentRepos ?? []);
+      const aliases: Record<string, string | null | undefined> = {};
+      for (const [repoPath, settings] of Object.entries(config.repoSettings ?? {})) {
+        aliases[repoPath] = settings.alias;
+      }
+      setRepoAliases(aliases);
+    } catch (error) {
+      console.error('Failed to load command palette repositories:', error);
+      setRecentRepos([]);
+      setRepoAliases({});
+    }
+  }, []);
+
+  const recentRepositories = useMemo<CommandPaletteRepoItem[]>(() => {
+    return recentRepos.map((repoPath) => ({
+      path: repoPath,
+      displayName: repoAliases[repoPath]?.trim() || getBaseName(repoPath),
+    }));
+  }, [recentRepos, repoAliases]);
 
   const filteredRepositories = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     if (!keyword) return recentRepositories;
 
     return recentRepositories.filter((repo) => {
-      const name = getRepositoryDisplayName(repo).toLowerCase();
+      const name = repo.displayName.toLowerCase();
       const repoPath = repo.path.toLowerCase();
       return name.includes(keyword) || repoPath.includes(keyword);
     });
@@ -50,12 +69,21 @@ export function CommandPalette() {
       ? -1
       : Math.min(selectedIndex, filteredRepositories.length - 1);
 
-  const openRepository = useCallback(
+  const selectRepository = useCallback(
     (repoPath: string) => {
       closePalette();
-      router.push(`/git?path=${encodeURIComponent(repoPath)}`);
+      const navigation = buildCommandPaletteRepoNavigation({
+        pathname,
+        search: searchParams.toString(),
+        repoPath,
+      });
+      if (navigation.method === 'replace') {
+        router.replace(navigation.href);
+        return;
+      }
+      router.push(navigation.href);
     },
-    [closePalette, router]
+    [closePalette, pathname, router, searchParams]
   );
 
   useEffect(() => {
@@ -64,12 +92,13 @@ export function CommandPalette() {
       if (isCommandOpenShortcut) {
         event.preventDefault();
         setIsOpen(true);
+        void loadRecentRepos();
       }
     };
 
     window.addEventListener('keydown', onGlobalKeyDown);
     return () => window.removeEventListener('keydown', onGlobalKeyDown);
-  }, []);
+  }, [loadRecentRepos]);
 
   useEscapeDismiss(isOpen, closePalette);
 
@@ -124,7 +153,7 @@ export function CommandPalette() {
                 event.preventDefault();
                 const selectedRepo = activeIndex >= 0 ? filteredRepositories[activeIndex] : null;
                 if (selectedRepo) {
-                  openRepository(selectedRepo.path);
+                  selectRepository(selectedRepo.path);
                 }
               }
             }}
@@ -147,7 +176,7 @@ export function CommandPalette() {
           )}
 
           {filteredRepositories.map((repo, index) => {
-            const repoDisplayName = getRepositoryDisplayName(repo);
+            const repoDisplayName = repo.displayName;
             return (
               <button
                 key={repo.path}
@@ -157,7 +186,7 @@ export function CommandPalette() {
                   activeIndex === index ? 'bg-base-200' : 'hover:bg-base-200/70'
                 )}
                 onMouseEnter={() => setSelectedIndex(index)}
-                onClick={() => openRepository(repo.path)}
+                onClick={() => selectRepository(repo.path)}
               >
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium">{repoDisplayName}</div>
