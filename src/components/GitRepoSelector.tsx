@@ -95,6 +95,25 @@ function deriveSessionTitleFromTaskDescription(taskDescription: string): string 
   return firstNonEmptyLine.slice(0, SESSION_TITLE_MAX_LENGTH);
 }
 
+function normalizePathForComparison(pathValue: string): string {
+  return pathValue.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+function toProjectRelativeRepoPath(projectPath: string, repoPath: string): string {
+  const normalizedProjectPath = normalizePathForComparison(projectPath);
+  const normalizedRepoPath = normalizePathForComparison(repoPath);
+
+  if (!normalizedProjectPath || !normalizedRepoPath) return repoPath;
+  if (normalizedRepoPath === normalizedProjectPath) return '.';
+
+  const projectPrefix = `${normalizedProjectPath}/`;
+  if (normalizedRepoPath.startsWith(projectPrefix)) {
+    return normalizedRepoPath.slice(projectPrefix.length);
+  }
+
+  return repoPath;
+}
+
 export default function GitRepoSelector({
   mode = 'home',
   projectPath = null,
@@ -448,6 +467,14 @@ export default function GitRepoSelector({
 
     await refreshSessionData(path);
   };
+
+  const getRepoDisplayPath = useCallback((repoPath: string, totalRepos: number): string => {
+    if (!selectedRepo) return repoPath;
+    if (totalRepos === 1) {
+      return getBaseName(selectedRepo) || selectedRepo;
+    }
+    return toProjectRelativeRepoPath(selectedRepo, repoPath);
+  }, [selectedRepo]);
 
   const ensureProjectRegistered = useCallback(async (projectPath: string) => {
     try {
@@ -1864,10 +1891,11 @@ export default function GitRepoSelector({
                         {projectGitRepos.map((repoPath) => {
                           const repoBranches = branchesByRepo[repoPath] ?? [];
                           const selectedBaseBranch = baseBranchByRepo[repoPath] || '';
+                          const displayRepoPath = getRepoDisplayPath(repoPath, projectGitRepos.length);
                           return (
                             <div key={repoPath} className="rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-[#30363d] dark:bg-[#0d1117]/70">
                               <div className="truncate font-mono text-[11px] text-slate-600 dark:text-slate-300" title={repoPath}>
-                                {repoPath}
+                                {displayRepoPath}
                               </div>
                               <div className="relative mt-2">
                                 <select
