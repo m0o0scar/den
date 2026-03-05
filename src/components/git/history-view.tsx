@@ -4549,7 +4549,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 <i className={cn("iconoir-nav-arrow-down text-[16px] shrink-0 transition-transform opacity-60", isBranchPopoverOpen && "rotate-180")} aria-hidden="true" />
               </button>
               {isBranchPopoverOpen && (
-                <div className="absolute right-0 top-full mt-2 z-50">
+                <div className="absolute left-0 top-full mt-2 z-50">
                   {branchTreePopoverContent}
                 </div>
               )}
