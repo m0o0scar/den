@@ -468,7 +468,7 @@ export default function SessionFileBrowser({
               })}
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
               {items.map((item, index) => {
                 const isSelected = selectedSet.has(item.path);
                 const isImage = !item.isDirectory && isImageFile(item.name);
@@ -485,14 +485,14 @@ export default function SessionFileBrowser({
                     onClick={(e) => handleItemClick(item, index, e)}
                     title={item.path}
                   >
-                    <div className="aspect-square bg-base-300 flex items-center justify-center overflow-hidden relative">
+                    <div className="aspect-[4/3] bg-base-300 flex items-center justify-center overflow-hidden relative p-2">
                       {isImage && !brokenThumbnails[item.path] ? (
                         <Image
                           src={thumbnailUrl}
                           alt={item.name}
                           fill
-                          sizes="(max-width: 768px) 50vw, (max-width: 1024px) 25vw, 20vw"
-                          className="object-cover"
+                          sizes="(max-width: 768px) 50vw, (max-width: 1280px) 33vw, 25vw"
+                          className="object-contain"
                           unoptimized
                           onError={() =>
                             setBrokenThumbnails((prev) => ({ ...prev, [item.path]: true }))
