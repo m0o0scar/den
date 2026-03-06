@@ -54,7 +54,9 @@ export async function getSessionPageBootstrap(sessionId: string): Promise<Sessio
     const [terminalSources, repoDisplayName, iconResult] = await Promise.all([
         getSessionTerminalSources(
             metadata.sessionName,
-            metadata.activeRepoPath || metadata.projectPath,
+            metadata.gitRepos.length > 0
+                ? metadata.gitRepos.map((repo) => repo.sourceRepoPath)
+                : [metadata.activeRepoPath || metadata.projectPath],
             metadata.agent,
         ),
         getProjectAlias(metadata.projectPath),
