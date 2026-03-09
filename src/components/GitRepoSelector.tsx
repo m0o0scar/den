@@ -2713,7 +2713,7 @@ export default function GitRepoSelector({
                           {session.runState ? ` • ${session.runState}` : ''}
                         </p>
                       </div>
-                      <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+                      <div className="ml-2 flex w-[84px] items-center justify-end gap-1 overflow-hidden opacity-100 transition-[width,opacity] duration-200 sm:w-0 sm:opacity-0 sm:group-hover:w-[84px] sm:group-hover:opacity-100">
                         <button
                           type="button"
                           className="rounded p-1 text-slate-400 transition-colors hover:text-primary dark:text-slate-400 dark:hover:text-primary"
@@ -2774,7 +2774,7 @@ export default function GitRepoSelector({
                           {draft.reasoningEffort ? ` • ${draft.reasoningEffort}` : ''}
                         </p>
                       </div>
-                      <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+                      <div className="ml-2 flex w-[56px] items-center justify-end gap-1 overflow-hidden opacity-100 transition-[width,opacity] duration-200 sm:w-0 sm:opacity-0 sm:group-hover:w-[56px] sm:group-hover:opacity-100">
                         <button
                           type="button"
                           className="rounded p-1 text-slate-400 transition-colors hover:text-primary dark:text-slate-400 dark:hover:text-primary"
