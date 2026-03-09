@@ -47,6 +47,7 @@ import {
   waitForReplayIdle,
 } from "@/lib/agent/common";
 import { buildAcpSpawnEnv } from "@/lib/agent/spawn-env";
+import type { AgentRuntimeUpdate } from "@/lib/agent/providers/types";
 
 type AcpProviderId = "gemini" | "cursor";
 
@@ -1498,6 +1499,7 @@ export async function streamAcpChat(
   onEvent: (event: ChatStreamEvent) => void,
   signal?: AbortSignal,
   onDiagnostic?: (update: SessionAgentTurnDiagnosticUpdate) => void,
+  onRuntimeUpdate?: (update: AgentRuntimeUpdate) => void,
 ) {
   const emitDiagnostic = (update: SessionAgentTurnDiagnosticUpdate) => {
     onDiagnostic?.(update);
@@ -1560,6 +1562,9 @@ export async function streamAcpChat(
         extraEnv: input.extraEnv,
       },
     );
+  });
+  onRuntimeUpdate?.({
+    runtimePid: connection.child.pid ?? null,
   });
 
   const abortHandler = () => {
