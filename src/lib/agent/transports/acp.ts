@@ -139,6 +139,39 @@ type ParsedToolSnapshot = {
   fileChanges: FileChange[];
 };
 
+type TextChunkKind = "assistant" | "reasoning";
+
+class TurnTextSegmenter {
+  private readonly counters: Record<TextChunkKind, number> = {
+    assistant: 0,
+    reasoning: 0,
+  };
+  private readonly activeIds: Partial<Record<TextChunkKind, string>> = {};
+  private activeKind: TextChunkKind | null = null;
+
+  constructor(private readonly turnKey: string) {}
+
+  next(kind: TextChunkKind): string {
+    if (this.activeKind === kind) {
+      const existing = this.activeIds[kind];
+      if (existing) {
+        return existing;
+      }
+    }
+
+    const nextIndex = this.counters[kind] + 1;
+    this.counters[kind] = nextIndex;
+    const id = `${kind}-${this.turnKey}-${nextIndex}`;
+    this.activeIds[kind] = id;
+    this.activeKind = kind;
+    return id;
+  }
+
+  markBoundary() {
+    this.activeKind = null;
+  }
+}
+
 type LoginTask = {
   response: Promise<LoginStartResponse>;
   finished: Promise<void>;
@@ -865,15 +898,19 @@ function parseToolSnapshot(state: ToolState, cwd: string): ParsedToolSnapshot {
 class AcpTurnProjector {
   private readonly toolStates = new Map<string, ToolState>();
   private readonly commandSeedSignatures = new Map<string, string>();
+  private readonly textSegmenter: TurnTextSegmenter;
 
   constructor(
     private readonly threadId: string,
     private readonly turnId: string,
     private readonly onEvent: (event: ChatStreamEvent) => void,
     private readonly cwd: string,
-  ) {}
+  ) {
+    this.textSegmenter = new TurnTextSegmenter(turnId);
+  }
 
   handlePermissionRequest(params: RequestPermissionRequest) {
+    this.markTextBoundary();
     this.projectToolUpdate(params.toolCall);
   }
 
@@ -885,7 +922,7 @@ class AcpTurnProjector {
         if (text) {
           this.onEvent({
             type: "agent_message_delta",
-            itemId: `assistant-${this.turnId}`,
+            itemId: this.nextTextItemId("assistant"),
             delta: text,
             threadId: this.threadId,
             turnId: this.turnId,
@@ -899,7 +936,7 @@ class AcpTurnProjector {
         if (text) {
           this.onEvent({
             type: "reasoning_summary_delta",
-            itemId: `reasoning-${this.turnId}`,
+            itemId: this.nextTextItemId("reasoning"),
             delta: text,
             threadId: this.threadId,
             turnId: this.turnId,
@@ -909,9 +946,11 @@ class AcpTurnProjector {
       }
       case "tool_call":
       case "tool_call_update":
+        this.markTextBoundary();
         this.projectToolUpdate(update);
         return;
       case "plan":
+        this.markTextBoundary();
         this.onEvent({
           type: "plan_updated",
           threadId: this.threadId,
@@ -925,6 +964,14 @@ class AcpTurnProjector {
       default:
         return;
     }
+  }
+
+  private nextTextItemId(kind: TextChunkKind) {
+    return this.textSegmenter.next(kind);
+  }
+
+  private markTextBoundary() {
+    this.textSegmenter.markBoundary();
   }
 
   private projectToolUpdate(update: ToolCall | ToolCallUpdate) {
@@ -1045,6 +1092,7 @@ class AcpHistoryCollector {
   private readonly toolStates = new Map<string, ToolState>();
   private readonly byId = new Map<string, HistoryEntry>();
   private readonly order: string[] = [];
+  private readonly textSegmenters = new Map<string, TurnTextSegmenter>();
   private turnIndex = 0;
 
   constructor(private readonly cwd: string) {}
@@ -1068,9 +1116,11 @@ class AcpHistoryCollector {
         return;
       case "tool_call":
       case "tool_call_update":
+        this.markCurrentTurnTextBoundary();
         this.handleTool(update);
         return;
       case "plan":
+        this.markCurrentTurnTextBoundary();
         this.upsertEntry(`plan-${this.currentTurnKey()}`, () => ({
           kind: "plan",
           id: `plan-${this.currentTurnKey()}`,
@@ -1093,6 +1143,7 @@ class AcpHistoryCollector {
       return;
     }
 
+    this.markCurrentTurnTextBoundary();
     this.turnIndex += 1;
     const id = `user-${this.currentTurnKey()}`;
     this.upsertEntry(id, (existing) => ({
@@ -1107,7 +1158,7 @@ class AcpHistoryCollector {
       return;
     }
 
-    const id = `reasoning-${this.currentTurnKey()}`;
+    const id = this.nextCurrentTurnTextId("reasoning");
     this.upsertEntry(id, (existing) => ({
       kind: "reasoning",
       id,
@@ -1121,7 +1172,7 @@ class AcpHistoryCollector {
       return;
     }
 
-    const id = `assistant-${this.currentTurnKey()}`;
+    const id = this.nextCurrentTurnTextId("assistant");
     this.upsertEntry(id, (existing) => ({
       kind: "assistant",
       id,
@@ -1177,6 +1228,26 @@ class AcpHistoryCollector {
 
   private currentTurnKey() {
     return this.turnIndex > 0 ? String(this.turnIndex) : "0";
+  }
+
+  private getCurrentTurnSegmenter() {
+    const turnKey = this.currentTurnKey();
+    const existing = this.textSegmenters.get(turnKey);
+    if (existing) {
+      return existing;
+    }
+
+    const created = new TurnTextSegmenter(turnKey);
+    this.textSegmenters.set(turnKey, created);
+    return created;
+  }
+
+  private nextCurrentTurnTextId(kind: TextChunkKind) {
+    return this.getCurrentTurnSegmenter().next(kind);
+  }
+
+  private markCurrentTurnTextBoundary() {
+    this.getCurrentTurnSegmenter().markBoundary();
   }
 
   private upsertEntry(id: string, build: (existing?: HistoryEntry) => HistoryEntry) {
