@@ -66,6 +66,7 @@ type VirtualHistoryMetrics = {
 const HISTORY_ITEM_GAP_PX = 12;
 const HISTORY_ITEM_OVERSCAN_PX = 600;
 const COMPOSER_MAX_HEIGHT = 112;
+const STREAMING_HISTORY_TAIL_COUNT = 4;
 
 const PROVIDER_LABELS: Record<string, string> = {
   codex: 'Codex CLI',
@@ -714,12 +715,24 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
   const activeRunState = runtime?.runState ?? 'idle';
   const isTurnActive = activeRunState === 'queued' || activeRunState === 'running';
   const canSend = !loading && !isSending && composerValue.trim().length > 0;
+  const liveHistoryTailCount = useMemo(
+    () => Math.min(history.length, isTurnActive ? STREAMING_HISTORY_TAIL_COUNT : Math.min(2, history.length)),
+    [history.length, isTurnActive],
+  );
+  const virtualizedHistory = useMemo(
+    () => history.slice(0, Math.max(0, history.length - liveHistoryTailCount)),
+    [history, liveHistoryTailCount],
+  );
+  const liveTailHistory = useMemo(
+    () => history.slice(Math.max(0, history.length - liveHistoryTailCount)),
+    [history, liveHistoryTailCount],
+  );
   const historyMetrics = useMemo(() => {
     void historySizeVersion;
     const metrics: VirtualHistoryMetrics[] = [];
     let offset = 0;
 
-    history.forEach((item, index) => {
+    virtualizedHistory.forEach((item, index) => {
       const itemKey = `${item.id}-${item.updatedAt}`;
       const size = historySizeMapRef.current[itemKey] ?? estimateHistoryItemHeight(item);
       metrics.push({
@@ -728,7 +741,7 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
         end: offset + size,
       });
       offset += size;
-      if (index < history.length - 1) {
+      if (index < virtualizedHistory.length - 1) {
         offset += HISTORY_ITEM_GAP_PX;
       }
     });
@@ -737,9 +750,9 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
       items: metrics,
       totalHeight: offset,
     };
-  }, [history, historySizeVersion]);
+  }, [historySizeVersion, virtualizedHistory]);
   const visibleHistoryRange = useMemo(() => {
-    if (history.length === 0) {
+    if (virtualizedHistory.length === 0) {
       return { startIndex: 0, endIndex: -1 };
     }
 
@@ -761,11 +774,11 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
       startIndex,
       endIndex: Math.min(metrics.length - 1, Math.max(startIndex, endIndex - 1)),
     };
-  }, [history.length, historyMetrics.items, timelineScrollTop, timelineViewportHeight]);
+  }, [historyMetrics.items, timelineScrollTop, timelineViewportHeight, virtualizedHistory.length]);
   const visibleHistoryItems = useMemo(() => {
     if (visibleHistoryRange.endIndex < visibleHistoryRange.startIndex) return [];
 
-    return history
+    return virtualizedHistory
       .slice(visibleHistoryRange.startIndex, visibleHistoryRange.endIndex + 1)
       .map((item, index) => {
         const actualIndex = visibleHistoryRange.startIndex + index;
@@ -775,7 +788,7 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
           top: historyMetrics.items[actualIndex]?.start ?? 0,
         };
       });
-  }, [history, historyMetrics.items, visibleHistoryRange.endIndex, visibleHistoryRange.startIndex]);
+  }, [historyMetrics.items, virtualizedHistory, visibleHistoryRange.endIndex, visibleHistoryRange.startIndex]);
   const handleMeasureHistoryItem = useCallback((key: string, height: number) => {
     const nextHeight = Math.ceil(height);
     if (!Number.isFinite(nextHeight) || nextHeight <= 0) return;
@@ -1029,17 +1042,36 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
             </div>
           </div>
         ) : (
-          <div style={{ height: historyMetrics.totalHeight, position: 'relative' }}>
-            {visibleHistoryItems.map(({ item, itemKey, top }) => (
+          <>
+            {virtualizedHistory.length > 0 ? (
               <div
-                key={itemKey}
-                className="absolute left-0 right-0"
-                style={{ top }}
+                style={{
+                  height: historyMetrics.totalHeight,
+                  marginBottom: liveTailHistory.length > 0 ? HISTORY_ITEM_GAP_PX : 0,
+                  position: 'relative',
+                }}
               >
-                <VirtualHistoryRow item={item} onMeasure={handleMeasureHistoryItem} />
+                {visibleHistoryItems.map(({ item, itemKey, top }) => (
+                  <div
+                    key={itemKey}
+                    className="absolute left-0 right-0"
+                    style={{ top }}
+                  >
+                    <VirtualHistoryRow item={item} onMeasure={handleMeasureHistoryItem} />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            ) : null}
+            {liveTailHistory.length > 0 ? (
+              <div className="space-y-3">
+                {liveTailHistory.map((item) => (
+                  <div key={`${item.id}-${item.updatedAt}`}>
+                    {renderHistoryItem(item)}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </>
         )}
       </div>
 
