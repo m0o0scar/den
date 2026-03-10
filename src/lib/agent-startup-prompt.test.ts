@@ -125,7 +125,8 @@ describe('buildAgentStartupPrompt', () => {
     assert.ok(prompt);
     assert.match(prompt!, /^# Instructions/m);
     assert.match(prompt!, /Git context: this project contains one Git repository at `\.`\./);
-    assert.match(prompt!, /For visual UI tasks, use the `agent-browser` skill/);
+    assert.match(prompt!, /For visual UI tasks, prioritize Chrome remote-debug MCP tooling to attach to the user's current browser session/);
+    assert.match(prompt!, /If that is unavailable, fall back to the `agent-browser` skill/);
     assert.match(prompt!, /For bugfix\/debugging tasks, use the `systematic-debugging` skill/);
     assert.match(prompt!, /you may use `npx skills` to discover and install additional skills at your discretion/);
     assert.match(prompt!, /# Task\n\nFix the startup prompt$/m);
