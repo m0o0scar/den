@@ -1,12 +1,17 @@
 'use server';
 
+import fsSync from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { createHash, randomUUID } from 'crypto';
 import simpleGit from 'simple-git';
 import { getErrorMessage } from '../../lib/error-utils';
-import { removeWorktree, terminateSessionTerminalSessions } from './git';
+import {
+  getSessionTerminalEnvironments,
+  removeWorktree,
+  terminateSessionTerminalSessions,
+} from './git';
 import { discoverProjectGitRepos } from './project';
 import { getLocalDb } from '@/lib/local-db';
 import {
@@ -15,6 +20,7 @@ import {
 } from '@/lib/agent/reasoning';
 import { sortSessionHistoryForTimeline } from '@/lib/agent/history-order';
 import { publishSessionListUpdated } from '@/lib/sessionNotificationServer';
+import { getTmuxSessionName } from '@/lib/terminal-session';
 import type {
   AgentProvider,
   HistoryEntry,
@@ -119,6 +125,7 @@ export type SessionCreateMetadata = {
   model: string;
   reasoningEffort?: ReasoningEffort;
   title?: string;
+  startupScript?: string;
   devServerScript?: string;
   preparedWorkspaceId?: string;
 };
@@ -144,6 +151,7 @@ export type SessionWorkspacePreparation = {
   workspaceMode: SessionWorkspaceMode;
   activeRepoPath?: string;
   gitRepos: SessionGitRepoContext[];
+  startupCommandSignature?: string;
   expiresAt: string;
 };
 
@@ -433,6 +441,9 @@ type ProvisionedSessionWorkspace = {
   activeRepoPath?: string;
   gitRepos: SessionGitRepoContext[];
   contextFingerprint: string;
+  startupCommandSignature?: string;
+  startupCommandMode?: 'tmux' | 'shell';
+  startupCommandProcessPid?: number;
 };
 
 type SessionWorkspacePreparationPayload = {
@@ -443,6 +454,9 @@ type SessionWorkspacePreparationPayload = {
   activeRepoPath?: string;
   gitRepos: SessionGitRepoContext[];
   contextFingerprint: string;
+  startupCommandSignature?: string;
+  startupCommandMode?: 'tmux' | 'shell';
+  startupCommandProcessPid?: number;
 };
 
 type ResolvedSessionWorkspaceContextInput = {
@@ -478,6 +492,89 @@ function buildSessionWorkspaceContextFingerprint(
     .digest('hex');
 }
 
+function normalizeStartupScript(value: string | null | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function buildStartupCommandSignature(
+  startupScript: string,
+  agentCli?: string,
+): string {
+  return createHash('sha1')
+    .update(JSON.stringify({
+      startupScript: startupScript.trim(),
+      agentCli: normalizeOptionalText(agentCli) || '',
+    }))
+    .digest('hex');
+}
+
+function getWindowsExecutableNames(command: string): string[] {
+  if (process.platform !== 'win32') {
+    return [command];
+  }
+
+  const pathExtEntries = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD')
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const lowerCommand = command.toLowerCase();
+  if (pathExtEntries.some((entry) => lowerCommand.endsWith(entry.toLowerCase()))) {
+    return [command];
+  }
+
+  return [command, ...pathExtEntries.map((entry) => `${command}${entry}`)];
+}
+
+function resolveCommandPath(command: string): string | null {
+  const pathEntries = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const candidateName of getWindowsExecutableNames(command)) {
+    if (!candidateName) continue;
+
+    if (candidateName.includes(path.sep) && fsSync.existsSync(candidateName)) {
+      return candidateName;
+    }
+
+    for (const directory of pathEntries) {
+      const candidatePath = path.join(directory, candidateName);
+      if (fsSync.existsSync(candidatePath)) {
+        return candidatePath;
+      }
+    }
+  }
+
+  return null;
+}
+
+function isCommandAvailable(command: string): boolean {
+  return Boolean(resolveCommandPath(command));
+}
+
+function getStartupShellCommand(): { command: string; args: string[]; shellKind: 'posix' | 'powershell' } {
+  if (process.platform === 'win32') {
+    const powershellCommand = isCommandAvailable('pwsh.exe') ? 'pwsh.exe' : 'powershell.exe';
+    return {
+      command: powershellCommand,
+      args: ['-NoLogo'],
+      shellKind: 'powershell',
+    };
+  }
+
+  return {
+    command: 'bash',
+    args: [],
+    shellKind: 'posix',
+  };
+}
+
+function resolveStartupCommandPersistenceMode(): 'tmux' | 'shell' {
+  if (process.platform === 'win32') {
+    return 'shell';
+  }
+
+  return isCommandAvailable('tmux') ? 'tmux' : 'shell';
+}
+
 function toSessionWorkspacePreparationPayload(
   provision: ProvisionedSessionWorkspace,
 ): SessionWorkspacePreparationPayload {
@@ -489,6 +586,9 @@ function toSessionWorkspacePreparationPayload(
     activeRepoPath: provision.activeRepoPath,
     gitRepos: provision.gitRepos,
     contextFingerprint: provision.contextFingerprint,
+    startupCommandSignature: provision.startupCommandSignature,
+    startupCommandMode: provision.startupCommandMode,
+    startupCommandProcessPid: provision.startupCommandProcessPid,
   };
 }
 
@@ -534,6 +634,15 @@ function parseSessionWorkspacePreparationPayload(
       activeRepoPath: normalizeOptionalText(payload.activeRepoPath),
       gitRepos,
       contextFingerprint: payload.contextFingerprint.trim(),
+      startupCommandSignature: normalizeOptionalText(payload.startupCommandSignature),
+      startupCommandMode: payload.startupCommandMode === 'tmux' || payload.startupCommandMode === 'shell'
+        ? payload.startupCommandMode
+        : undefined,
+      startupCommandProcessPid: typeof payload.startupCommandProcessPid === 'number'
+        && Number.isFinite(payload.startupCommandProcessPid)
+        && payload.startupCommandProcessPid > 0
+        ? payload.startupCommandProcessPid
+        : undefined,
     };
   } catch {
     return null;
@@ -599,6 +708,44 @@ async function copyProjectWithoutGitRepos(
 function getSessionRootPath(projectPath: string, sessionName: string): string {
   const projectSlug = slugifyProjectPath(projectPath);
   return path.join(os.homedir(), '.viba', 'projects', projectSlug, sessionName);
+}
+
+function getSessionStartupProcessStatePath(projectPath: string, sessionName: string): string {
+  return path.join(getSessionRootPath(projectPath, sessionName), 'startup-process.json');
+}
+
+async function writeSessionStartupProcessState(
+  projectPath: string,
+  sessionName: string,
+  state: { pid: number; signature: string },
+): Promise<void> {
+  const statePath = getSessionStartupProcessStatePath(projectPath, sessionName);
+  await fs.mkdir(path.dirname(statePath), { recursive: true });
+  await fs.writeFile(statePath, JSON.stringify(state), 'utf-8');
+}
+
+async function clearSessionStartupProcessState(
+  projectPath: string,
+  sessionName: string,
+): Promise<void> {
+  const statePath = getSessionStartupProcessStatePath(projectPath, sessionName);
+  await fs.rm(statePath, { force: true });
+}
+
+async function readSessionStartupProcessState(
+  projectPath: string,
+  sessionName: string,
+): Promise<{ pid?: number; signature?: string }> {
+  try {
+    const raw = await fs.readFile(getSessionStartupProcessStatePath(projectPath, sessionName), 'utf-8');
+    const parsed = JSON.parse(raw) as { pid?: unknown; signature?: unknown };
+    return {
+      pid: typeof parsed.pid === 'number' && Number.isFinite(parsed.pid) && parsed.pid > 0 ? parsed.pid : undefined,
+      signature: normalizeOptionalText(typeof parsed.signature === 'string' ? parsed.signature : undefined),
+    };
+  } catch {
+    return {};
+  }
 }
 
 function normalizeGitContextInput(
@@ -831,6 +978,164 @@ function toSessionCreateResult(metadata: SessionMetadata): SessionCreateResult {
   };
 }
 
+function getProvisionRepoPaths(
+  provision: Pick<ProvisionedSessionWorkspace, 'projectPath' | 'gitRepos'>,
+): string[] {
+  if (provision.gitRepos.length > 0) {
+    return provision.gitRepos.map((gitRepo) => gitRepo.sourceRepoPath);
+  }
+  return [];
+}
+
+async function terminateProvisionedStartupCommand(
+  provision: Pick<
+    ProvisionedSessionWorkspace,
+    'projectPath' | 'sessionName' | 'startupCommandMode' | 'startupCommandProcessPid'
+  >,
+): Promise<void> {
+  if (provision.startupCommandMode === 'tmux') {
+    await terminateSessionTerminalSessions(provision.sessionName);
+    await clearSessionStartupProcessState(provision.projectPath, provision.sessionName);
+    return;
+  }
+
+  const startupProcessPid = provision.startupCommandProcessPid
+    ?? (await readSessionStartupProcessState(provision.projectPath, provision.sessionName)).pid;
+  if (provision.startupCommandMode === 'shell' && startupProcessPid) {
+    try {
+      process.kill(startupProcessPid, 'SIGTERM');
+    } catch {
+      // Ignore missing or already-exited startup processes.
+    }
+  }
+
+  await clearSessionStartupProcessState(provision.projectPath, provision.sessionName);
+}
+
+async function launchStartupCommandForProvision(
+  provision: ProvisionedSessionWorkspace,
+  startupScript: string,
+  agentCli?: string,
+): Promise<Pick<ProvisionedSessionWorkspace, 'startupCommandSignature' | 'startupCommandMode' | 'startupCommandProcessPid'>> {
+  const signature = buildStartupCommandSignature(startupScript, agentCli);
+  const repoPaths = getProvisionRepoPaths(provision);
+  const environments = await getSessionTerminalEnvironments(repoPaths, agentCli).catch((error) => {
+    console.warn('Failed to resolve startup command terminal environment:', error);
+    return [];
+  });
+  const persistenceMode = resolveStartupCommandPersistenceMode();
+
+  if (persistenceMode === 'tmux') {
+    const { spawnSync } = await import('child_process');
+    const tmuxSession = getTmuxSessionName(provision.sessionName, 'terminal');
+    const hasSessionResult = spawnSync('tmux', ['has-session', '-t', tmuxSession], {
+      stdio: 'ignore',
+      env: process.env,
+    });
+
+    if (typeof hasSessionResult.status === 'number' && hasSessionResult.status !== 0) {
+      const createArgs = ['new-session', '-d'];
+      for (const environment of environments) {
+        if (!environment.value) continue;
+        createArgs.push('-e', `${environment.name}=${environment.value}`);
+      }
+      createArgs.push('-c', provision.workspacePath, '-s', tmuxSession);
+
+      const createResult = spawnSync('tmux', createArgs, {
+        stdio: 'ignore',
+        env: process.env,
+      });
+      if (typeof createResult.status === 'number' && createResult.status !== 0) {
+        throw new Error(`tmux new-session exited with status ${createResult.status}`);
+      }
+    }
+
+    const sendLiteralResult = spawnSync('tmux', ['send-keys', '-t', tmuxSession, '-l', startupScript], {
+      stdio: 'ignore',
+      env: process.env,
+    });
+    if (typeof sendLiteralResult.status === 'number' && sendLiteralResult.status !== 0) {
+      throw new Error(`tmux send-keys -l exited with status ${sendLiteralResult.status}`);
+    }
+
+    const sendResult = spawnSync('tmux', ['send-keys', '-t', tmuxSession, 'C-m'], {
+      stdio: 'ignore',
+      env: process.env,
+    });
+    if (typeof sendResult.status === 'number' && sendResult.status !== 0) {
+      throw new Error(`tmux send-keys exited with status ${sendResult.status}`);
+    }
+
+    return {
+      startupCommandSignature: signature,
+      startupCommandMode: 'tmux',
+    };
+  }
+
+  const { spawn } = await import('child_process');
+  const shellCommand = getStartupShellCommand();
+  const shellArgs = shellCommand.shellKind === 'powershell'
+    ? [...shellCommand.args, '-NoProfile', '-Command', startupScript]
+    : [...shellCommand.args, '-lc', startupScript];
+  const child = spawn(shellCommand.command, shellArgs, {
+    cwd: provision.workspacePath,
+    env: {
+      ...process.env,
+      ...Object.fromEntries(environments.map((entry) => [entry.name, entry.value])),
+    },
+    stdio: 'ignore',
+    detached: true,
+  });
+  child.unref();
+  if (child.pid) {
+    await writeSessionStartupProcessState(provision.projectPath, provision.sessionName, {
+      pid: child.pid,
+      signature,
+    });
+  }
+
+  return {
+    startupCommandSignature: signature,
+    startupCommandMode: 'shell',
+    startupCommandProcessPid: child.pid ?? undefined,
+  };
+}
+
+async function syncStartupCommandForProvision(
+  provision: ProvisionedSessionWorkspace,
+  startupScript: string | null | undefined,
+  agentCli?: string,
+): Promise<ProvisionedSessionWorkspace> {
+  const normalizedStartupScript = normalizeStartupScript(startupScript);
+  if (!normalizedStartupScript) {
+    if (provision.startupCommandSignature) {
+      await terminateProvisionedStartupCommand(provision);
+      return {
+        ...provision,
+        startupCommandSignature: undefined,
+        startupCommandMode: undefined,
+        startupCommandProcessPid: undefined,
+      };
+    }
+    return provision;
+  }
+
+  const signature = buildStartupCommandSignature(normalizedStartupScript, agentCli);
+  if (provision.startupCommandSignature === signature) {
+    return provision;
+  }
+
+  if (provision.startupCommandSignature) {
+    await terminateProvisionedStartupCommand(provision);
+  }
+
+  const startupState = await launchStartupCommandForProvision(provision, normalizedStartupScript, agentCli);
+  return {
+    ...provision,
+    ...startupState,
+  };
+}
+
 async function cleanupWorkspaceRoot(
   workspacePath: string,
   workspaceMode: SessionWorkspaceMode,
@@ -848,8 +1153,13 @@ async function cleanupWorkspaceRoot(
 }
 
 async function cleanupProvisionedSessionWorkspace(
-  provision: Pick<ProvisionedSessionWorkspace, 'workspaceMode' | 'workspacePath' | 'gitRepos'>,
+  provision: Pick<
+    ProvisionedSessionWorkspace,
+    'projectPath' | 'sessionName' | 'workspaceMode' | 'workspacePath' | 'gitRepos' | 'startupCommandMode' | 'startupCommandProcessPid'
+  >,
 ): Promise<void> {
+  await terminateProvisionedStartupCommand(provision);
+
   if (provision.workspaceMode === 'single_worktree' || provision.workspaceMode === 'multi_repo_worktree') {
     for (const gitRepo of provision.gitRepos) {
       await removeWorktree(gitRepo.sourceRepoPath, gitRepo.worktreePath, gitRepo.branchName);
@@ -880,6 +1190,7 @@ function rowToSessionWorkspacePreparation(
     workspaceMode: payload.workspaceMode,
     activeRepoPath: payload.activeRepoPath,
     gitRepos: payload.gitRepos,
+    startupCommandSignature: payload.startupCommandSignature,
     expiresAt: row.expires_at,
     status: row.status,
     cancelRequested: row.cancel_requested === 1,
@@ -907,9 +1218,13 @@ async function sweepExpiredSessionWorkspacePreparations(): Promise<void> {
     if (payload) {
       try {
         await cleanupProvisionedSessionWorkspace({
+          projectPath: payload.projectPath,
+          sessionName: payload.sessionName,
           workspaceMode: payload.workspaceMode,
           workspacePath: payload.workspacePath,
           gitRepos: payload.gitRepos,
+          startupCommandMode: payload.startupCommandMode,
+          startupCommandProcessPid: payload.startupCommandProcessPid,
         });
       } catch (cleanupError) {
         console.warn('Failed to cleanup expired session workspace preparation:', cleanupError);
@@ -1615,6 +1930,41 @@ async function getSessionWorkspacePreparationRow(
   return row ?? null;
 }
 
+function toProvisionedSessionWorkspaceFromPreparationPayload(
+  payload: SessionWorkspacePreparationPayload,
+): ProvisionedSessionWorkspace {
+  return {
+    sessionName: payload.sessionName,
+    projectPath: payload.projectPath,
+    workspacePath: payload.workspacePath,
+    workspaceMode: payload.workspaceMode,
+    activeRepoPath: payload.activeRepoPath,
+    gitRepos: payload.gitRepos,
+    contextFingerprint: payload.contextFingerprint,
+    startupCommandSignature: payload.startupCommandSignature,
+    startupCommandMode: payload.startupCommandMode,
+    startupCommandProcessPid: payload.startupCommandProcessPid,
+  };
+}
+
+function persistPreparationPayload(
+  preparationId: string,
+  payload: SessionWorkspacePreparationPayload,
+): void {
+  const db = getLocalDb();
+  db.prepare(`
+    UPDATE session_workspace_preparations
+    SET
+      payload_json = @payloadJson,
+      updated_at = @now
+    WHERE preparation_id = @preparationId
+  `).run({
+    preparationId,
+    payloadJson: JSON.stringify(payload),
+    now: new Date().toISOString(),
+  });
+}
+
 export async function prepareSessionWorkspace(
   projectPath: string,
   gitContextsOrBaseBranch: string | SessionCreateGitContextInput[],
@@ -1689,12 +2039,51 @@ export async function prepareSessionWorkspace(
         workspaceMode: provision.workspaceMode,
         activeRepoPath: provision.activeRepoPath,
         gitRepos: provision.gitRepos,
+        startupCommandSignature: provision.startupCommandSignature,
         expiresAt,
       },
     };
   } catch (e: unknown) {
     console.error('Failed to prepare session workspace:', e);
     return { success: false, error: getErrorMessage(e) };
+  }
+}
+
+export async function startPreparedSessionWorkspaceStartupCommand(
+  preparationId: string,
+  startupScript: string | null | undefined,
+  agentCli?: string,
+): Promise<{ success: boolean; started: boolean; error?: string }> {
+  try {
+    await sweepExpiredSessionWorkspacePreparations();
+
+    const row = await getSessionWorkspacePreparationRow(preparationId);
+    if (!row || row.status !== SESSION_WORKSPACE_PREPARATION_STATUS_READY) {
+      return { success: true, started: false };
+    }
+
+    const payload = parseSessionWorkspacePreparationPayload(row.payload_json);
+    if (!payload) {
+      return { success: false, started: false, error: 'Prepared workspace payload is invalid.' };
+    }
+
+    const syncedProvision = await syncStartupCommandForProvision(
+      toProvisionedSessionWorkspaceFromPreparationPayload(payload),
+      startupScript,
+      agentCli,
+    );
+    const nextPayload = toSessionWorkspacePreparationPayload(syncedProvision);
+    if (JSON.stringify(nextPayload) !== row.payload_json) {
+      persistPreparationPayload(row.preparation_id, nextPayload);
+    }
+
+    return {
+      success: true,
+      started: Boolean(syncedProvision.startupCommandSignature),
+    };
+  } catch (e: unknown) {
+    console.error('Failed to start prepared session startup command:', e);
+    return { success: false, started: false, error: getErrorMessage(e) };
   }
 }
 
@@ -1716,9 +2105,13 @@ export async function releasePreparedSessionWorkspace(
     const payload = parseSessionWorkspacePreparationPayload(row.payload_json);
     if (payload) {
       await cleanupProvisionedSessionWorkspace({
+        projectPath: payload.projectPath,
+        sessionName: payload.sessionName,
         workspaceMode: payload.workspaceMode,
         workspacePath: payload.workspacePath,
         gitRepos: payload.gitRepos,
+        startupCommandMode: payload.startupCommandMode,
+        startupCommandProcessPid: payload.startupCommandProcessPid,
       });
     }
 
@@ -1846,12 +2239,23 @@ export async function createSession(
           activeRepoPath: prepared.activeRepoPath,
           gitRepos: prepared.gitRepos,
           contextFingerprint: prepared.contextFingerprint,
+          startupCommandSignature: prepared.startupCommandSignature,
         };
       }
     }
 
     if (!provision) {
       provision = await provisionSessionWorkspace(projectPath, gitContextsOrBaseBranch);
+    }
+
+    try {
+      provision = await syncStartupCommandForProvision(
+        provision,
+        metadata.startupScript,
+        metadata.agentProvider ?? metadata.agent,
+      );
+    } catch (startupError) {
+      console.warn('Failed to start session startup command:', startupError);
     }
 
     const sessionData = await persistSessionMetadataFromProvision(provision, metadata);
@@ -1889,6 +2293,12 @@ export async function deleteSession(sessionName: string): Promise<{ success: boo
     }
 
     await terminateSessionTerminalSessions(sessionName);
+    await terminateProvisionedStartupCommand({
+      projectPath: metadata.projectPath,
+      sessionName,
+      startupCommandMode: 'shell',
+      startupCommandProcessPid: undefined,
+    });
     await cleanupSessionWorkspace(metadata);
 
     const db = getLocalDb();

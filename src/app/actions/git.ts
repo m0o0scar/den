@@ -755,6 +755,17 @@ async function resolveAgentApiTerminalSessionEnvironments(agentCli: string | und
   return toAgentTerminalSessionEnvironments(normalizedAgentCli, credential.apiKey, credential.apiProxy);
 }
 
+export async function getSessionTerminalEnvironments(
+  repoPaths: string[],
+  agentCli?: string,
+): Promise<TerminalSessionEnvironment[]> {
+  const [gitEnvironments, agentEnvironments] = await Promise.all([
+    resolveGitTerminalSessionEnvironments(repoPaths),
+    resolveAgentApiTerminalSessionEnvironments(agentCli),
+  ]);
+  return [...gitEnvironments, ...agentEnvironments];
+}
+
 export async function getSessionTerminalSources(
   sessionName: string,
   repoPaths: string[],
@@ -776,11 +787,7 @@ export async function getSessionTerminalSources(
   };
 
   try {
-    const [gitEnvironments, agentEnvironments] = await Promise.all([
-      resolveGitTerminalSessionEnvironments(repoPaths),
-      resolveAgentApiTerminalSessionEnvironments(agentCli),
-    ]);
-    const environments = [...gitEnvironments, ...agentEnvironments];
+    const environments = await getSessionTerminalEnvironments(repoPaths, agentCli);
 
     return {
       agentTerminalSrc: buildTtydTerminalSrc(sessionName, 'agent', environments, {

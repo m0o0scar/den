@@ -123,7 +123,6 @@ export default function SessionPage() {
 
     // Startup params — only populated on first open (initialized === false)
     const [initialMessage, setInitialMessage] = useState<string | undefined>(undefined);
-    const [startupScript, setStartupScript] = useState<string | undefined>(undefined);
     const [contextTitle, setContextTitle] = useState<string | undefined>(undefined);
     const [contextAgentProvider, setContextAgentProvider] = useState<string | undefined>(undefined);
     const [contextSessionMode, setContextSessionMode] = useState<'fast' | 'plan' | undefined>(undefined);
@@ -329,7 +328,6 @@ export default function SessionPage() {
 
                 const launchContext = bootstrap.launchContext;
                 setInitialMessage(launchContext?.initialMessage);
-                setStartupScript(launchContext?.startupScript);
                 setContextTitle(launchContext?.title);
                 setContextAgentProvider(launchContext?.agentProvider);
                 setContextSessionMode(launchContext?.sessionMode);
@@ -410,7 +408,6 @@ export default function SessionPage() {
             gitRepos={metadata.gitRepos}
             sessionName={metadata.sessionName}
             agent={contextAgentProvider || metadata.agent}
-            startupScript={startupScript}
             devServerScript={metadata.devServerScript}
             initialMessage={initialMessage}
             attachmentPaths={contextAttachmentPaths}

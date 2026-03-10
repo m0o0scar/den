@@ -18,7 +18,7 @@ import {
     terminateTmuxSessionRole,
 } from '@/app/actions/git';
 import { getConfig, updateConfig } from '@/app/actions/config';
-import { Trash2, ExternalLink, Play, GitMerge, GitPullRequestArrow, GitBranch, ArrowUp, ArrowDown, FolderOpen, ChevronLeft, ChevronRight, Grip, ChevronDown, Plus, RotateCw, ScrollText, TextCursorInput, X, Info } from 'lucide-react';
+import { Trash2, ExternalLink, Play, GitMerge, GitPullRequestArrow, GitBranch, ArrowUp, ArrowDown, FolderOpen, ChevronLeft, Grip, ChevronDown, Plus, RotateCw, ScrollText, TextCursorInput, X, Info } from 'lucide-react';
 import AgentSessionPane, { type AgentSessionHeaderMeta, type AgentSessionPaneHandle } from './AgentSessionPane';
 import SessionFileBrowser from './SessionFileBrowser';
 import { SessionRepoViewer, type SessionRepoViewerOption } from './SessionRepoViewer';
@@ -63,7 +63,6 @@ type TerminalBootstrapState = 'idle' | 'in_progress' | 'done';
 type TerminalBootstrapRegistry = Record<string, TerminalBootstrapState>;
 type TerminalInteractionMode = 'scroll' | 'select';
 type TerminalOnWriteParsedDisposable = { dispose?: () => void };
-type TerminalStartupScriptState = { injected: boolean; timer: number | null };
 type TerminalWithOnWriteParsed = NonNullable<TerminalWindow['term']> & {
     onWriteParsed?: (callback: () => void) => TerminalOnWriteParsedDisposable | void;
 };
@@ -160,7 +159,6 @@ export interface SessionViewProps {
     gitRepos?: SessionGitRepoContext[];
     sessionName: string;
     agent?: string;
-    startupScript?: string;
     devServerScript?: string;
     initialMessage?: string;
     attachmentPaths?: string[];
@@ -186,7 +184,6 @@ export function SessionView({
     activeRepoPath,
     gitRepos = [],
     sessionName,
-    startupScript,
     devServerScript,
     onExit,
     isResume,
@@ -265,7 +262,6 @@ export function SessionView({
     const terminalProcessMonitorCleanupRef = useRef<(() => void) | null>(null);
     const terminalAutoScrollCleanupRef = useRef<Record<string, (() => void) | null>>({});
     const iframeBeforeUnloadCleanupRef = useRef<Record<string, (() => void) | null>>({});
-    const terminalStartupScriptStateRef = useRef<Record<string, TerminalStartupScriptState>>({});
     const [terminalPersistenceMode, setTerminalPersistenceMode] = useState<'tmux' | 'shell'>(initialTerminalPersistenceMode);
     const [terminalShellKind, setTerminalShellKind] = useState<TerminalShellKind>(initialTerminalShellKind);
     const [isTerminalServiceReady, setIsTerminalServiceReady] = useState(false);
@@ -305,32 +301,6 @@ export function SessionView({
     });
     const tmuxSilentScrollRequestKeyRef = useRef<string | null>(null);
     const tmuxSilentScrollAppliedKeyRef = useRef<string | null>(null);
-
-    const getTerminalStartupScriptState = useCallback((slot: TerminalBootstrapSlot): TerminalStartupScriptState => {
-        const existing = terminalStartupScriptStateRef.current[slot];
-        if (existing) return existing;
-        const created: TerminalStartupScriptState = { injected: false, timer: null };
-        terminalStartupScriptStateRef.current[slot] = created;
-        return created;
-    }, []);
-
-    const clearTerminalStartupScriptState = useCallback((slot: TerminalBootstrapSlot): void => {
-        const existing = terminalStartupScriptStateRef.current[slot];
-        if (!existing) return;
-        if (existing.timer !== null) {
-            window.clearTimeout(existing.timer);
-        }
-        delete terminalStartupScriptStateRef.current[slot];
-    }, []);
-
-    const resetAllTerminalStartupScriptStates = useCallback((): void => {
-        for (const state of Object.values(terminalStartupScriptStateRef.current)) {
-            if (state.timer !== null) {
-                window.clearTimeout(state.timer);
-            }
-        }
-        terminalStartupScriptStateRef.current = {};
-    }, []);
 
     const getTerminalLinkCleanupRef = useCallback((slot: TerminalBootstrapSlot): CleanupRef => {
         const existing = terminalFrameLinkCleanupRefs.current[slot];
@@ -472,18 +442,11 @@ export function SessionView({
         };
         tmuxSilentScrollRequestKeyRef.current = null;
         tmuxSilentScrollAppliedKeyRef.current = null;
-        resetAllTerminalStartupScriptStates();
-    }, [resetAllTerminalStartupScriptStates, sessionName]);
+    }, [sessionName]);
 
     useEffect(() => {
         setActiveSessionRepoPath(activeRepoPath || normalizedGitRepos[0]?.sourceRepoPath || legacyRepo);
     }, [activeRepoPath, legacyRepo, normalizedGitRepos, sessionName]);
-
-    useEffect(() => {
-        return () => {
-            resetAllTerminalStartupScriptStates();
-        };
-    }, [resetAllTerminalStartupScriptStates]);
 
     useEffect(() => {
         cleanupAllIframeResources();
@@ -675,52 +638,6 @@ export function SessionView({
         setIsTerminalForegroundProcessRunning(false);
         stopTerminalProcessMonitor();
     }, [sessionName, stopTerminalProcessMonitor]);
-
-    const injectTerminalStartupScript = useCallback((
-        slot: TerminalBootstrapSlot,
-        iframe: HTMLIFrameElement,
-        win: TerminalWindow,
-        term: NonNullable<TerminalWindow['term']>
-    ): boolean => {
-        if (isResume) return false;
-
-        const script = startupScript?.trim();
-        const startupState = getTerminalStartupScriptState(slot);
-        if (!script || startupState.injected) return false;
-
-        const pressEnter = () => {
-            const textarea = iframe.contentDocument?.querySelector("textarea.xterm-helper-textarea");
-            if (textarea) {
-                textarea.dispatchEvent(new KeyboardEvent('keypress', {
-                    bubbles: true,
-                    cancelable: true,
-                    charCode: 13,
-                    keyCode: 13,
-                    key: 'Enter',
-                    view: win
-                }));
-            } else {
-                term.paste('\r');
-            }
-        };
-
-        startupState.injected = true;
-        if (startupState.timer !== null) {
-            window.clearTimeout(startupState.timer);
-        }
-        startupState.timer = window.setTimeout(() => {
-            startupState.timer = null;
-            try {
-                term.paste(script);
-                pressEnter();
-            } catch (error) {
-                startupState.injected = false;
-                console.error('Failed to inject startup script into terminal iframe:', error);
-            }
-        }, 500);
-
-        return true;
-    }, [getTerminalStartupScriptState, isResume, startupScript]);
 
     const [feedback, setFeedback] = useState<string>('Initializing...');
     const [agentHeaderMeta, setAgentHeaderMeta] = useState<AgentSessionHeaderMeta | null>(null);
@@ -1041,7 +958,6 @@ export function SessionView({
         cleanupBeforeUnloadGuard(bootstrapSlot);
         cleanupTerminalAutoScroll(bootstrapSlot);
         clearTerminalBootstrapState(bootstrapSlot);
-        clearTerminalStartupScriptState(bootstrapSlot);
         void (async () => {
             const result = await terminateTmuxSessionRole(sessionName, tabId);
             if (!result.success) {
@@ -1053,7 +969,6 @@ export function SessionView({
         cleanupTerminalAutoScroll,
         cleanupTerminalLinkHandler,
         clearTerminalBootstrapState,
-        clearTerminalStartupScriptState,
         sessionName,
         terminalTabIds,
     ]);
@@ -1147,16 +1062,40 @@ export function SessionView({
         setIsRightPanelCollapsed((previous) => !previous);
     }, []);
 
-    const handleRepoButtonClick = useCallback(() => {
+    const handlePreviewButtonClick = useCallback(() => {
+        if (isRightPanelCollapsed) {
+            setIsRepoViewActive(false);
+            setIsRightPanelCollapsed(false);
+            return;
+        }
+
+        if (!isRepoViewActive) {
+            setIsRightPanelCollapsed(true);
+            return;
+        }
+
+        setIsRepoViewActive(false);
+    }, [isRepoViewActive, isRightPanelCollapsed]);
+
+    const handleChangesButtonClick = useCallback(() => {
         if (isFolderMode) {
             setFeedback(FOLDER_MODE_GIT_DISABLED_REASON);
             return;
         }
+
         if (isRightPanelCollapsed) {
+            setIsRepoViewActive(true);
             setIsRightPanelCollapsed(false);
+            return;
         }
-        setIsRepoViewActive((previous) => !previous);
-    }, [isFolderMode, isRightPanelCollapsed]);
+
+        if (isRepoViewActive) {
+            setIsRightPanelCollapsed(true);
+            return;
+        }
+
+        setIsRepoViewActive(true);
+    }, [isFolderMode, isRepoViewActive, isRightPanelCollapsed]);
 
     useEffect(() => {
         if (!isSplitResizing) return;
@@ -1878,9 +1817,6 @@ export function SessionView({
                         if (shouldSkipResumeInjection && !alreadyBootstrapped) {
                             markTerminalBootstrapped(bootstrapSlot);
                         }
-                        if (alreadyBootstrapped) {
-                            injectTerminalStartupScript(bootstrapSlot, iframe, win, term);
-                        }
                         if (isActiveTerminalFrame()) {
                             win.focus();
                             const textarea = iframe.contentDocument?.querySelector("textarea.xterm-helper-textarea");
@@ -1924,9 +1860,7 @@ export function SessionView({
                     }
                     markTerminalBootstrapped(bootstrapSlot);
 
-                    if (tabId === MAIN_TERMINAL_TAB_ID) {
-                        injectTerminalStartupScript(bootstrapSlot, iframe, win, term);
-                    } else {
+                    if (tabId !== MAIN_TERMINAL_TAB_ID) {
                         const targetPath = parseTerminalWorkingDirectoryFromSrc(tabSrc) || sessionWorkspaceRootPath || worktree || repo;
                         if (targetPath && !shellBootstrapEnvironmentCommand) {
                             term.paste(buildShellSetDirectoryCommand(targetPath, terminalShellKind));
@@ -1992,11 +1926,12 @@ export function SessionView({
             : 'Run dev server script in terminal';
     const isMobileRightPanelOverlay = isMobileViewport;
     const isMobileOverlayExpanded = isMobileRightPanelOverlay && !isRightPanelCollapsed;
+    const isPreviewPanelActive = !isRightPanelCollapsed && !isRepoViewActive;
+    const isChangesPanelActive = !isRightPanelCollapsed && isRepoViewActive;
     const renderedTerminalTabIds = terminalPersistenceMode === 'tmux'
         ? [activeTerminalTabId]
         : terminalTabIds;
     const showDesktopSplitHandle = !isRightPanelCollapsed && !isMobileRightPanelOverlay;
-    const showInlineRightPanelToggle = !isMobileRightPanelOverlay || !isRightPanelCollapsed;
     const rightPanelWrapperClass = isMobileRightPanelOverlay
         ? `absolute inset-0 z-30 h-full transition-[opacity,transform] duration-300 ease-in-out ${isRightPanelCollapsed
             ? 'pointer-events-none translate-x-2 opacity-0'
@@ -2136,14 +2071,27 @@ export function SessionView({
                     <div className="flex items-center overflow-hidden rounded border border-base-content/20 bg-base-100 dark:border-[#30363d] dark:bg-[#0d1117]">
                         <button
                             type="button"
-                            className={`btn btn-ghost btn-xs h-6 min-h-6 rounded-none border-none px-2 hover:bg-base-content/10 dark:hover:bg-[#30363d]/60 ${isRepoViewActive ? 'bg-slate-100 text-slate-900 dark:bg-[#30363d] dark:text-slate-100' : 'text-slate-700 dark:text-slate-300'}`}
-                            onClick={handleRepoButtonClick}
+                            className={`btn btn-ghost btn-xs h-6 min-h-6 rounded-none border-none px-2 hover:bg-base-content/10 dark:hover:bg-[#30363d]/60 ${isPreviewPanelActive ? 'bg-slate-100 text-slate-900 dark:bg-[#30363d] dark:text-slate-100' : 'text-slate-700 dark:text-slate-300'}`}
+                            onClick={handlePreviewButtonClick}
+                            aria-pressed={isPreviewPanelActive}
+                            title={isPreviewPanelActive
+                                ? 'Hide preview and terminal panel'
+                                : 'Show preview and terminal panel'}
+                        >
+                            <Play className="h-3 w-3" />
+                            <span className={headerButtonLabelClass}>Preview</span>
+                        </button>
+                        <div className="h-4 w-[1px] bg-base-content/10 dark:bg-[#30363d]"></div>
+                        <button
+                            type="button"
+                            className={`btn btn-ghost btn-xs h-6 min-h-6 rounded-none border-none px-2 hover:bg-base-content/10 dark:hover:bg-[#30363d]/60 ${isChangesPanelActive ? 'bg-slate-100 text-slate-900 dark:bg-[#30363d] dark:text-slate-100' : 'text-slate-700 dark:text-slate-300'}`}
+                            onClick={handleChangesButtonClick}
                             disabled={isFolderMode}
-                            aria-pressed={isRepoViewActive}
+                            aria-pressed={isChangesPanelActive}
                             title={isFolderMode
                                 ? gitControlsDisabledReason
-                                : isRepoViewActive
-                                    ? 'Show preview and terminal panel'
+                                : isChangesPanelActive
+                                    ? 'Hide repository viewer'
                                     : 'Show repository viewer'}
                         >
                             <GitBranch className="h-3 w-3" />
@@ -2282,15 +2230,6 @@ export function SessionView({
                                     </span>
                                 </div>
                             ) : null}
-                            <button
-                                type="button"
-                                className="btn btn-ghost btn-xs h-6 min-h-6 w-6 shrink-0 border border-slate-200 bg-white p-0 text-slate-700 hover:bg-slate-100 dark:border-[#30363d] dark:bg-[#0d1117] dark:text-slate-300 dark:hover:bg-[#30363d]/60"
-                                onClick={handleOpenAgentDetails}
-                                title="Agent details"
-                                aria-label="Agent details"
-                            >
-                                <Info className="h-3.5 w-3.5" />
-                            </button>
                             {agentHeaderMeta?.canCancel ? (
                                 <button
                                     type="button"
@@ -2335,6 +2274,15 @@ export function SessionView({
                                     <span className="agent-activity-action-label">Add Files</span>
                                 </button>
                             </div>
+                            <button
+                                type="button"
+                                className="btn btn-ghost btn-xs h-6 min-h-6 w-6 shrink-0 border border-slate-200 bg-white p-0 text-slate-700 hover:bg-slate-100 dark:border-[#30363d] dark:bg-[#0d1117] dark:text-slate-300 dark:hover:bg-[#30363d]/60"
+                                onClick={handleOpenAgentDetails}
+                                title="Agent details"
+                                aria-label="Agent details"
+                            >
+                                <Info className="h-3.5 w-3.5" />
+                            </button>
                         </div>
                     </div>
                     <div className="min-h-0 flex-1">
@@ -2381,19 +2329,6 @@ export function SessionView({
                 <div
                     className={rightPanelWrapperClass}
                 >
-                    {showInlineRightPanelToggle && (
-                        <button
-                            className={`btn btn-ghost btn-xs absolute top-3 z-20 h-7 w-7 min-h-7 rounded-full border border-slate-200 bg-white/95 p-0 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-[#30363d] dark:bg-[#161b22]/95 dark:text-slate-300 dark:hover:bg-[#30363d]/80 ${isMobileRightPanelOverlay ? 'left-3' : 'left-0 -translate-x-1/2'}`}
-                            onClick={handleToggleRightPanelCollapse}
-                            type="button"
-                            title={isRightPanelCollapsed ? 'Expand right panel' : 'Collapse right panel'}
-                            aria-label={isRightPanelCollapsed ? 'Expand right panel' : 'Collapse right panel'}
-                            aria-pressed={isRightPanelCollapsed}
-                        >
-                            {isRightPanelCollapsed ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </button>
-                    )}
-
                     {!isRightPanelCollapsed && (
                         <div className={rightPanelShellClass}>
                             {isRepoViewActive ? (

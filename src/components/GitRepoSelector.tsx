@@ -25,6 +25,7 @@ import {
   prepareSessionWorkspace,
   releasePreparedSessionWorkspace,
   saveSessionLaunchContext,
+  startPreparedSessionWorkspaceStartupCommand,
   type SessionCreateGitContextInput,
   SessionMetadata,
 } from '@/app/actions/session';
@@ -307,6 +308,8 @@ export default function GitRepoSelector({
   const workspacePreparationInputKeyRef = useRef<string | null>(null);
   const workspacePreparationRequestRef = useRef(0);
   const ttydWarmupStartedRef = useRef(false);
+  const latestStartupScriptRef = useRef('');
+  const latestSelectedAgentProviderRef = useRef<AgentProvider>('codex');
 
   const collapsedSessionSetupLabel = 'Show Session Setup';
 
@@ -919,6 +922,14 @@ export default function GitRepoSelector({
   }, [mode, selectedRepo]);
 
   useEffect(() => {
+    latestStartupScriptRef.current = startupScript;
+  }, [startupScript]);
+
+  useEffect(() => {
+    latestSelectedAgentProviderRef.current = selectedAgentProvider;
+  }, [selectedAgentProvider]);
+
+  useEffect(() => {
     if (mode !== 'new') return;
     if (ttydWarmupStartedRef.current) return;
     ttydWarmupStartedRef.current = true;
@@ -995,6 +1006,20 @@ export default function GitRepoSelector({
     setPreparedWorkspaceState,
     workspacePreparationInputKey,
   ]);
+
+  useEffect(() => {
+    if (mode !== 'new' || !preparedWorkspace) return;
+
+    void startPreparedSessionWorkspaceStartupCommand(
+      preparedWorkspace.preparationId,
+      latestStartupScriptRef.current,
+      latestSelectedAgentProviderRef.current,
+    ).then((result) => {
+      if (!result.success) {
+        console.warn('Failed to start prepared workspace startup command:', result.error || 'unknown error');
+      }
+    });
+  }, [mode, preparedWorkspace]);
 
   useEffect(() => {
     if (mode !== 'new') return;
@@ -1959,6 +1984,7 @@ export default function GitRepoSelector({
         model: resolvedModel,
         reasoningEffort: resolvedReasoningEffort,
         title: derivedTitle,
+        startupScript: startupScript || undefined,
         devServerScript: resolvedDevServerScript || undefined,
         preparedWorkspaceId,
       });
