@@ -202,7 +202,7 @@ function codeBlock(value: string | null | undefined) {
   const text = trimEmpty(value);
   if (!text) return null;
   return (
-    <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-slate-950/95 px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-100 dark:bg-black">
+    <pre className="max-w-full overflow-x-hidden whitespace-pre-wrap break-words rounded-lg bg-slate-950/95 px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-100 dark:bg-black">
       {text}
     </pre>
   );
@@ -286,7 +286,7 @@ function MarkdownMessage({ value }: { value: string | null | undefined }) {
   if (!text) return null;
 
   return (
-    <div className="markdown-message overflow-x-auto text-sm leading-7">
+    <div className="markdown-message min-w-0 max-w-full overflow-x-hidden break-words text-sm leading-7">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -313,13 +313,13 @@ function MarkdownMessage({ value }: { value: string | null | undefined }) {
             </a>
           ),
           table: ({ children }) => (
-            <div className="mb-3 overflow-x-auto last:mb-0">
-              <table className="min-w-full border-collapse text-left text-xs">{children}</table>
+            <div className="mb-3 max-w-full overflow-x-hidden last:mb-0">
+              <table className="w-full table-fixed border-collapse text-left text-xs">{children}</table>
             </div>
           ),
           thead: ({ children }) => <thead className="border-b border-slate-300 dark:border-slate-600">{children}</thead>,
-          th: ({ children }) => <th className="px-3 py-2 font-semibold">{children}</th>,
-          td: ({ children }) => <td className="border-b border-slate-200 px-3 py-2 align-top dark:border-slate-700">{children}</td>,
+          th: ({ children }) => <th className="break-words px-3 py-2 font-semibold">{children}</th>,
+          td: ({ children }) => <td className="border-b border-slate-200 px-3 py-2 align-top break-words dark:border-slate-700">{children}</td>,
           hr: () => <hr className="my-4 border-slate-300 dark:border-slate-600" />,
           code: ({ className, children }) => {
             const textContent = String(children).replace(/\n$/, '');
@@ -384,7 +384,7 @@ function renderCollapsibleHistoryItem({
   const summaryTitle = title ? `${label}: ${title}` : label;
 
   return (
-    <details className={className}>
+    <details className={`min-w-0 overflow-hidden ${className}`}>
       <summary className={summaryClassName} title={summaryTitle}>
         <span className={labelClassName}>{label}</span>
         {title ? <span className={titleClassName}>{title}</span> : null}
@@ -403,8 +403,8 @@ function renderHistoryItem(item: SessionAgentHistoryItem, options: RenderHistory
   switch (item.kind) {
     case 'user':
       return (
-        <div className="flex justify-end">
-          <div className={`max-w-[85%] rounded-2xl rounded-br-md bg-blue-100 px-4 py-3 text-sm text-blue-950 shadow-sm dark:bg-blue-500/15 dark:text-blue-50 ${options.pulse ? 'animate-pulse' : ''}`}>
+        <div className="flex min-w-0 justify-end">
+          <div className={`min-w-0 max-w-[85%] overflow-hidden rounded-2xl rounded-br-md bg-blue-100 px-4 py-3 text-sm text-blue-950 shadow-sm dark:bg-blue-500/15 dark:text-blue-50 ${options.pulse ? 'animate-pulse' : ''}`}>
             {options.status ? (
               <div className="mb-2 flex items-center justify-end">
                 <span className="rounded-full border border-blue-300/80 bg-white/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:border-blue-300/20 dark:bg-blue-950/40 dark:text-blue-100">
@@ -419,7 +419,7 @@ function renderHistoryItem(item: SessionAgentHistoryItem, options: RenderHistory
       );
     case 'assistant':
       return (
-        <div className="px-1 py-1 text-sm text-slate-800 dark:text-slate-100">
+        <div className="min-w-0 overflow-hidden px-1 py-1 text-sm text-slate-800 dark:text-slate-100">
           {item.phase ? (
             <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               {item.phase}
@@ -614,7 +614,7 @@ function VirtualHistoryRow({ item, onMeasure }: VirtualHistoryRowProps) {
   }, [itemKey, onMeasure]);
 
   return (
-    <div ref={rowRef}>
+    <div ref={rowRef} className="min-w-0 max-w-full">
       {renderHistoryItem(item, item.itemStatus === 'sending' ? { status: 'sending', pulse: true } : undefined)}
     </div>
   );
@@ -1567,7 +1567,7 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
 
       <div
         ref={timelineRef}
-        className="custom-scrollbar flex-1 overflow-y-auto px-4 py-4"
+        className="custom-scrollbar flex-1 overflow-x-hidden overflow-y-auto px-4 py-4"
         onScroll={(event) => {
           const target = event.currentTarget;
           setTimelineScrollTop(target.scrollTop);

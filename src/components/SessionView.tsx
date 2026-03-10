@@ -1058,10 +1058,6 @@ export function SessionView({
         };
     };
 
-    const handleToggleRightPanelCollapse = useCallback(() => {
-        setIsRightPanelCollapsed((previous) => !previous);
-    }, []);
-
     const handlePreviewButtonClick = useCallback(() => {
         if (isRightPanelCollapsed) {
             setIsRepoViewActive(false);
@@ -1954,18 +1950,23 @@ export function SessionView({
                 <div className={`fixed inset-0 z-[9999] ${isResizing ? 'cursor-row-resize' : 'cursor-col-resize'}`} />
             )}
             <div className={sessionHeaderClass}>
-                <div className="flex items-center gap-4">
+                <div className="flex min-w-0 flex-1 items-center gap-4">
                     <button
                         className="btn btn-ghost btn-xs h-6 min-h-6 px-1 text-slate-600 hover:bg-base-content/10 dark:text-slate-300 dark:hover:bg-[#30363d]/60"
                         onClick={() => onExit()}
                         title="Back to Home"
                     >
-                        <ChevronLeft className="w-4 h-4" />
+                        <ChevronLeft className="h-4 w-4" />
                     </button>
-                    <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
-                            <span className="opacity-50">Project:</span>
-                            <span className="font-bold">{repoDisplayName || getBaseName(legacyRepo)}</span>
+                    <div className="flex min-w-0 flex-col">
+                        <div className="flex min-w-0 items-center gap-2">
+                            {!isMobileViewport && <span className="shrink-0 opacity-50">Project:</span>}
+                            <span
+                                className="min-w-0 max-w-[200px] truncate font-bold sm:max-w-[320px]"
+                                title={repoDisplayName || getBaseName(legacyRepo)}
+                            >
+                                {repoDisplayName || getBaseName(legacyRepo)}
+                            </span>
                         </div>
                         {sessionName && (
                             <div className="hidden min-[1200px]:flex min-w-0 items-center gap-2 text-[10px] opacity-70">
@@ -1976,7 +1977,7 @@ export function SessionView({
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="ml-3 flex shrink-0 items-center gap-4">
                     <div className="flex items-center overflow-hidden rounded border border-base-content/20 bg-base-100 dark:border-[#30363d] dark:bg-[#0d1117]">
                         <button
                             className="btn btn-ghost btn-xs h-6 min-h-6 rounded-none border-none px-2 text-slate-700 hover:bg-base-content/10 dark:text-slate-300 dark:hover:bg-[#30363d]/60"
@@ -2101,7 +2102,7 @@ export function SessionView({
                         </div>
                     )}
 
-                    {currentBaseBranch && !gitControlsDisabled && (
+                    {currentBaseBranch && !gitControlsDisabled && !isMobileViewport && (
                         <div className="flex items-center gap-2 text-xs opacity-80" title={`Divergence against ${currentBaseBranch}`}>
                             <span className="inline-flex items-center gap-1">
                                 <ArrowUp className="w-3 h-3" />
@@ -2200,76 +2201,78 @@ export function SessionView({
                     className={agentPanelClass}
                     style={{ width: isRightPanelCollapsed || isMobileRightPanelOverlay ? '100%' : `${agentPaneRatio * 100}%` }}
                 >
-                    <div className={agentToolbarClass}>
-                        <span className="flex shrink-0 items-center gap-2 uppercase tracking-wide">
-                            <span className="h-2 w-2 rounded-full bg-blue-500"></span>
-                            Agent Activity
-                        </span>
-                        <div className="flex min-w-0 items-center justify-end gap-2 overflow-x-auto py-1 text-xs font-medium normal-case">
-                            {agentHeaderMeta ? (
-                                <div className="flex min-w-0 max-w-[440px] items-center gap-1.5 overflow-hidden whitespace-nowrap rounded border border-slate-200 bg-white px-2 py-0.5 dark:border-[#30363d] dark:bg-[#0d1117]">
-                                    <span
-                                        className="min-w-0 max-w-[140px] truncate text-slate-700 dark:text-slate-200"
-                                        title={agentHeaderMeta.providerName || 'Agent'}
+                    {!isMobileViewport && (
+                        <div className={agentToolbarClass}>
+                            <span className="flex shrink-0 items-center gap-2 uppercase tracking-wide">
+                                <span className="h-2 w-2 rounded-full bg-blue-500"></span>
+                                Agent Activity
+                            </span>
+                            <div className="flex min-w-0 items-center justify-end gap-2 overflow-x-auto py-1 text-xs font-medium normal-case">
+                                {agentHeaderMeta ? (
+                                    <div className="flex min-w-0 max-w-[440px] items-center gap-1.5 overflow-hidden whitespace-nowrap rounded border border-slate-200 bg-white px-2 py-0.5 dark:border-[#30363d] dark:bg-[#0d1117]">
+                                        <span
+                                            className="min-w-0 max-w-[140px] truncate text-slate-700 dark:text-slate-200"
+                                            title={agentHeaderMeta.providerName || 'Agent'}
+                                        >
+                                            {agentHeaderMeta.providerName || 'Agent'}
+                                        </span>
+                                        <span className="shrink-0 text-slate-300 dark:text-slate-500">/</span>
+                                        <span
+                                            className="min-w-0 max-w-[180px] truncate text-slate-500 dark:text-slate-400"
+                                            title={agentHeaderMeta.model || 'n/a'}
+                                        >
+                                            {agentHeaderMeta.model || 'n/a'}
+                                        </span>
+                                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${agentRunStateTone(agentHeaderMeta.runState)}`}>
+                                            {formatAgentRunState(agentHeaderMeta.runState)}
+                                        </span>
+                                    </div>
+                                ) : null}
+                                <div className="flex shrink-0 items-center overflow-hidden rounded border border-slate-200 bg-white dark:border-[#30363d] dark:bg-[#0d1117]">
+                                    <select
+                                        className="select select-xs h-6 min-h-6 rounded-none border-none bg-slate-100 pr-7 text-slate-700 focus:outline-none dark:bg-[#161b22] dark:text-slate-300"
+                                        value={selectedIde}
+                                        onChange={handleIdeChange}
                                     >
-                                        {agentHeaderMeta.providerName || 'Agent'}
-                                    </span>
-                                    <span className="shrink-0 text-slate-300 dark:text-slate-500">/</span>
-                                    <span
-                                        className="min-w-0 max-w-[180px] truncate text-slate-500 dark:text-slate-400"
-                                        title={agentHeaderMeta.model || 'n/a'}
+                                        {SUPPORTED_IDES.map(ide => (
+                                            <option key={ide.id} value={ide.id}>{ide.name}</option>
+                                        ))}
+                                    </select>
+                                    <div className="h-4 w-[1px] bg-slate-200 dark:bg-[#30363d]"></div>
+                                    <button
+                                        className="btn btn-ghost btn-xs h-6 min-h-6 rounded-none border-none px-2 text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-[#30363d]/60"
+                                        onClick={handleOpenIde}
+                                        title={`Open in ${SUPPORTED_IDES.find(i => i.id === selectedIde)?.name}`}
+                                        aria-label="Open in IDE"
                                     >
-                                        {agentHeaderMeta.model || 'n/a'}
-                                    </span>
-                                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${agentRunStateTone(agentHeaderMeta.runState)}`}>
-                                        {formatAgentRunState(agentHeaderMeta.runState)}
-                                    </span>
+                                        <ExternalLink className="h-3 w-3" />
+                                        <span className="agent-activity-action-label">Open in IDE</span>
+                                    </button>
                                 </div>
-                            ) : null}
-                            <div className="flex shrink-0 items-center overflow-hidden rounded border border-slate-200 bg-white dark:border-[#30363d] dark:bg-[#0d1117]">
-                                <select
-                                    className="select select-xs h-6 min-h-6 rounded-none border-none bg-slate-100 pr-7 text-slate-700 focus:outline-none dark:bg-[#161b22] dark:text-slate-300"
-                                    value={selectedIde}
-                                    onChange={handleIdeChange}
-                                >
-                                    {SUPPORTED_IDES.map(ide => (
-                                        <option key={ide.id} value={ide.id}>{ide.name}</option>
-                                    ))}
-                                </select>
-                                <div className="h-4 w-[1px] bg-slate-200 dark:bg-[#30363d]"></div>
+                                <div className="flex shrink-0 items-center overflow-hidden rounded border border-slate-200 bg-white dark:border-[#30363d] dark:bg-[#0d1117]">
+                                    <button
+                                        className="btn btn-ghost btn-xs h-6 min-h-6 rounded-none border-none px-2 text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-[#30363d]/60"
+                                        onClick={() => setIsFileBrowserOpen(true)}
+                                        disabled={isInsertingFilePaths}
+                                        title="Browse files and insert absolute paths into the agent input"
+                                        aria-label="Add files"
+                                    >
+                                        {isInsertingFilePaths ? <span className="loading loading-spinner loading-xs"></span> : <FolderOpen className="h-3 w-3" />}
+                                        <span className="agent-activity-action-label">Add Files</span>
+                                    </button>
+                                </div>
                                 <button
-                                    className="btn btn-ghost btn-xs h-6 min-h-6 rounded-none border-none px-2 text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-[#30363d]/60"
-                                    onClick={handleOpenIde}
-                                    title={`Open in ${SUPPORTED_IDES.find(i => i.id === selectedIde)?.name}`}
-                                    aria-label="Open in IDE"
+                                    type="button"
+                                    className="btn btn-ghost btn-xs h-6 min-h-6 w-6 shrink-0 border border-slate-200 bg-white p-0 text-slate-700 hover:bg-slate-100 dark:border-[#30363d] dark:bg-[#0d1117] dark:text-slate-300 dark:hover:bg-[#30363d]/60"
+                                    onClick={handleOpenAgentDetails}
+                                    title="Agent details"
+                                    aria-label="Agent details"
                                 >
-                                    <ExternalLink className="h-3 w-3" />
-                                    <span className="agent-activity-action-label">Open in IDE</span>
+                                    <Info className="h-3.5 w-3.5" />
                                 </button>
                             </div>
-                            <div className="flex shrink-0 items-center overflow-hidden rounded border border-slate-200 bg-white dark:border-[#30363d] dark:bg-[#0d1117]">
-                                <button
-                                    className="btn btn-ghost btn-xs h-6 min-h-6 rounded-none border-none px-2 text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-[#30363d]/60"
-                                    onClick={() => setIsFileBrowserOpen(true)}
-                                    disabled={isInsertingFilePaths}
-                                    title="Browse files and insert absolute paths into the agent input"
-                                    aria-label="Add files"
-                                >
-                                    {isInsertingFilePaths ? <span className="loading loading-spinner loading-xs"></span> : <FolderOpen className="h-3 w-3" />}
-                                    <span className="agent-activity-action-label">Add Files</span>
-                                </button>
-                            </div>
-                            <button
-                                type="button"
-                                className="btn btn-ghost btn-xs h-6 min-h-6 w-6 shrink-0 border border-slate-200 bg-white p-0 text-slate-700 hover:bg-slate-100 dark:border-[#30363d] dark:bg-[#0d1117] dark:text-slate-300 dark:hover:bg-[#30363d]/60"
-                                onClick={handleOpenAgentDetails}
-                                title="Agent details"
-                                aria-label="Agent details"
-                            >
-                                <Info className="h-3.5 w-3.5" />
-                            </button>
                         </div>
-                    </div>
+                    )}
                     <div className="min-h-0 flex-1">
                         <AgentSessionPane
                             ref={agentPaneRef}
@@ -2297,19 +2300,6 @@ export function SessionView({
                         <div className="absolute left-1/2 top-1/2 h-12 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-400 dark:bg-slate-500" />
                     )}
                 </div>
-
-                {isMobileRightPanelOverlay && isRightPanelCollapsed && (
-                    <button
-                        className="btn btn-ghost btn-xs absolute right-3 top-1/2 z-20 h-7 w-7 min-h-7 -translate-y-1/2 rounded-full border border-slate-200 bg-white/95 p-0 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-[#30363d] dark:bg-[#161b22]/95 dark:text-slate-300 dark:hover:bg-[#30363d]/80"
-                        onClick={handleToggleRightPanelCollapse}
-                        type="button"
-                        title="Expand right panel"
-                        aria-label="Expand right panel"
-                        aria-pressed={false}
-                    >
-                        <ChevronLeft className="h-4 w-4" />
-                    </button>
-                )}
 
                 <div
                     className={rightPanelWrapperClass}

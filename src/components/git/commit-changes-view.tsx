@@ -9,6 +9,7 @@ import { CommitFileTreeItem, buildCommitFileTree, collectCommitFolderPaths, getP
 import { DiffView } from './diff-view';
 
 const MAX_SELECTION_STATE_ENTRIES = 40;
+const MOBILE_VIEWPORT_QUERY = '(max-width: 767px)';
 
 function pruneSelectionStateMap<T>(state: Record<string, T>, currentKey: string): Record<string, T> {
   const entries = Object.entries(state);
@@ -35,6 +36,7 @@ export function CommitFileDiffView({
   toCommitHash,
   filePath,
   splitView,
+  containerClassName = 'overflow-auto h-full',
 }: {
   repoPath: string;
   commitHash: string | null;
@@ -42,6 +44,7 @@ export function CommitFileDiffView({
   toCommitHash: string | null;
   filePath: string;
   splitView: boolean;
+  containerClassName?: string;
 }) {
   const { data, isLoading } = useCommitFileDiff(repoPath, filePath, {
     commitHash,
@@ -109,7 +112,7 @@ export function CommitFileDiffView({
   }
 
   return (
-    <div ref={diffScrollContainerRef} className="overflow-auto h-full">
+    <div ref={diffScrollContainerRef} className={containerClassName}>
       <GroupedDiffViewer
         oldValue={data.left || ''}
         newValue={data.right || ''}
@@ -151,6 +154,7 @@ export function CommitChangesView({
   const [selectedFileBySelection, setSelectedFileBySelection] = useState<Record<string, string | null>>({});
   const [isFullPageDiff, setIsFullPageDiff] = useState(false);
   const [collapsedFoldersByCommit, setCollapsedFoldersByCommit] = useState<Record<string, Set<string>>>({});
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const workingTreeFiles = useMemo(() => {
     if (!statusFiles || statusFiles.length === 0) return [];
 
@@ -283,6 +287,17 @@ export function CommitChangesView({
 
   const isLoadingCurrentSelection = isWorkingTreeSelection ? isStatusLoading : isLoading;
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mediaQuery = window.matchMedia(MOBILE_VIEWPORT_QUERY);
+    const updateViewport = () => setIsMobileViewport(mediaQuery.matches);
+    updateViewport();
+
+    mediaQuery.addEventListener('change', updateViewport);
+    return () => mediaQuery.removeEventListener('change', updateViewport);
+  }, []);
+
   if (isLoadingCurrentSelection) {
     return <div className="flex items-center justify-center p-8 h-full"><span className="loading loading-spinner text-base-content/50"></span></div>;
   }
@@ -300,31 +315,94 @@ export function CommitChangesView({
   return (
     <div
       className={cn(
-        'flex h-full',
+        'flex h-full min-w-0',
         isFullPageDiff && 'fixed inset-0 z-[80] h-auto bg-base-100 shadow-2xl'
       )}
     >
       {/* File list */}
-      <div className={cn(fileListWidthClass, 'border-r border-base-300 flex flex-col bg-base-200/30 shrink-0')}>
-        <div className="px-3 py-2 text-xs font-bold opacity-70 border-b border-base-300 bg-base-100">
-          {files.length} file{files.length !== 1 ? 's' : ''} changed
-        </div>
-        <div className="flex-1 overflow-y-auto min-h-0">
-          <div className="p-1">
-            <CommitFileTreeItem
-              node={fileTree}
-              selectedFile={selectedFile}
-              expandedFolders={expandedFolders}
-              onToggleFolder={handleToggleFolder}
-              onSelectFile={handleSelectFile}
-            />
+      {!isMobileViewport && (
+        <div className={cn(fileListWidthClass, 'border-r border-base-300 flex flex-col bg-base-200/30 shrink-0')}>
+          <div className="px-3 py-2 text-xs font-bold opacity-70 border-b border-base-300 bg-base-100">
+            {files.length} file{files.length !== 1 ? 's' : ''} changed
+          </div>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="p-1">
+              <CommitFileTreeItem
+                node={fileTree}
+                selectedFile={selectedFile}
+                expandedFolders={expandedFolders}
+                onToggleFolder={handleToggleFolder}
+                onSelectFile={handleSelectFile}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Diff view */}
-      <div className="flex-1 overflow-hidden">
-        {selectedFile ? (
+      <div className="flex-1 min-w-0 overflow-hidden">
+        {isMobileViewport ? (
+          <div className="h-full flex flex-col">
+            <div className="px-4 py-2 text-xs font-mono opacity-70 border-b border-base-300 bg-base-100 shrink-0 truncate flex items-center justify-between">
+              <span className="truncate">{files.length} file{files.length !== 1 ? 's' : ''} changed</span>
+              <div className="flex items-center gap-2 shrink-0 ml-4">
+                <label htmlFor="commit-diff-split-view" className="text-[10px] uppercase tracking-wider font-bold cursor-pointer opacity-70">Split View</label>
+                <input
+                  type="checkbox"
+                  id="commit-diff-split-view"
+                  checked={splitView}
+                  onChange={(e) => setSplitView(e.target.checked)}
+                  className="toggle toggle-xs toggle-primary"
+                />
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs btn-square"
+                  onClick={() => setIsFullPageDiff((prev) => !prev)}
+                  aria-label={isFullPageDiff ? 'Exit full-page diff view' : 'Expand diff viewer to full page'}
+                  title={isFullPageDiff ? 'Exit full-page diff view' : 'Expand diff viewer to full page'}
+                >
+                  <i
+                    className={cn(
+                      isFullPageDiff ? 'iconoir-collapse' : 'iconoir-maximize',
+                      'text-[14px]'
+                    )}
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
+            </div>
+            <div ref={diffViewportRef} className="flex-1 overflow-auto diff-viewer-wrapper">
+              <div className="space-y-4 p-3">
+                {files.map((file) => (
+                  <section
+                    key={`${selectionKey}:${file.path}`}
+                    className="overflow-hidden rounded-lg border border-base-300 bg-base-100"
+                  >
+                    <div className="border-b border-base-300 px-4 py-2 text-xs font-mono opacity-70">
+                      <span className="block truncate" title={file.path}>{file.path}</span>
+                    </div>
+                    <div className="max-w-full overflow-hidden">
+                      {isWorkingTreeSelection ? (
+                        <DiffView repoPath={repoPath} filePath={file.path} />
+                      ) : (
+                        <CommitFileDiffView
+                          key={`${selectionKey}:${file.path}`}
+                          repoPath={repoPath}
+                          commitHash={commitHash}
+                          fromCommitHash={fromCommitHash}
+                          toCommitHash={toCommitHash}
+                          filePath={file.path}
+                          splitView={splitView}
+                          containerClassName="overflow-auto"
+                        />
+                      )}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : selectedFile ? (
           <div className="h-full flex flex-col">
             <div className="px-4 py-2 text-xs font-mono opacity-70 border-b border-base-300 bg-base-100 shrink-0 truncate flex items-center justify-between">
               <span className="truncate">{selectedFile}</span>

@@ -5,13 +5,129 @@ import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { cn, sanitizeBranchName } from '@/lib/utils';
 import { DiffView } from './diff-view';
 import { useEscapeDismiss } from '@/hooks/use-escape-dismiss';
+import { useTheme } from 'next-themes';
+import type { TerminalWindow } from '@/hooks/useTerminalLink';
+import { startTtydProcess } from '@/app/actions/git';
+import { buildTtydTerminalSrc, type TerminalShellKind } from '@/lib/terminal-session';
+import { buildShellSetDirectoryCommand, joinShellStatements, quoteShellArg } from '@/lib/shell';
+import {
+    applyThemeToTerminalWindow,
+    resolveShouldUseDarkTheme,
+    TERMINAL_THEME_DARK,
+    TERMINAL_THEME_LIGHT,
+} from '@/lib/ttyd-theme';
+import type { AppStatus, ModelOption } from '@/lib/types';
 
 const EMPTY_FILES: Array<{ path: string; index: string; working_dir: string }> = [];
+const AUTO_COMMIT_SETTINGS_STORAGE_KEY = 'git-web:auto-commit-agent-settings:v1';
+const AUTO_COMMIT_CODEX_FLAGS = '-c approval_policy="never" exec --color never --sandbox danger-full-access --skip-git-repo-check -';
+const AUTO_COMMIT_PROVIDER_LABELS: Record<string, string> = {
+    codex: 'Codex CLI',
+    gemini: 'Gemini CLI',
+    cursor: 'Cursor Agent CLI',
+};
+
+type AutoCommitProvider = 'codex' | 'gemini' | 'cursor';
+type AutoCommitSettings = {
+    provider: AutoCommitProvider;
+    model: string;
+};
+
+type AgentStatusResponse = {
+    status: AppStatus | null;
+    error?: string;
+};
+
+const DEFAULT_AUTO_COMMIT_SETTINGS: AutoCommitSettings = {
+    provider: 'codex',
+    model: 'auto',
+};
+const FALLBACK_AUTO_MODEL_OPTION: ModelOption = {
+    id: 'auto',
+    label: 'Auto',
+    description: 'Let the selected provider decide.',
+};
 
 function buildCommitMessage(subject: string, body: string): string {
     const trimmedSubject = subject.trim();
     const normalizedBody = body.replace(/\r\n/g, '\n');
     return normalizedBody.trim() ? `${trimmedSubject}\n\n${normalizedBody}` : trimmedSubject;
+}
+
+function parseAutoCommitSettings(raw: string | null): AutoCommitSettings {
+    if (!raw) return DEFAULT_AUTO_COMMIT_SETTINGS;
+    try {
+        const parsed = JSON.parse(raw) as Partial<AutoCommitSettings>;
+        const provider = parsed.provider;
+        const normalizedProvider: AutoCommitProvider = provider === 'gemini' || provider === 'cursor' || provider === 'codex'
+            ? provider
+            : DEFAULT_AUTO_COMMIT_SETTINGS.provider;
+        const model = typeof parsed.model === 'string' && parsed.model.trim()
+            ? parsed.model.trim()
+            : DEFAULT_AUTO_COMMIT_SETTINGS.model;
+        return { provider: normalizedProvider, model };
+    } catch {
+        return DEFAULT_AUTO_COMMIT_SETTINGS;
+    }
+}
+
+function buildAutoCommitAgentPrompt(isFirstCommit: boolean, initialBranch?: string): string {
+    const lines = [
+        'Run in this git repository and create a commit for the currently staged changes.',
+        'If you changed files inside a Git repository and the work for that repository is complete, commit that repository without confirmation.',
+        'Use a commit message with a clear title and a detailed body explaining what changed and why.',
+        'Do not push, do not open pull requests, and do not modify unstaged files.',
+        'Requirements:',
+        '1. Inspect only staged changes before writing the commit message.',
+        '2. Keep the commit focused on the staged changes only.',
+        '3. Create the commit and then run git status.',
+        '4. Print the created commit hash and subject in the terminal output.',
+    ];
+
+    if (isFirstCommit && initialBranch?.trim()) {
+        lines.push(`5. This repository has no commits yet. Ensure the first commit is on branch "${initialBranch.trim()}".`);
+    }
+
+    return lines.join('\n');
+}
+
+function buildAutoCommitAgentCommand(
+    repoPath: string,
+    shellKind: TerminalShellKind,
+    settings: AutoCommitSettings,
+    prompt: string,
+): string {
+    const normalizedModel = settings.model.trim();
+    const useAutoModel = normalizedModel.length === 0 || normalizedModel.toLowerCase() === 'auto';
+    const promptArg = quoteShellArg(prompt, shellKind);
+
+    const codexCommand = useAutoModel
+        ? `NO_COLOR=1 FORCE_COLOR=0 TERM=xterm codex ${AUTO_COMMIT_CODEX_FLAGS}`
+        : `NO_COLOR=1 FORCE_COLOR=0 TERM=xterm codex -c approval_policy="never" exec --color never --sandbox danger-full-access --skip-git-repo-check --model ${quoteShellArg(normalizedModel, shellKind)} -`;
+    const codexRun = shellKind === 'powershell'
+        ? `$inputPrompt = ${promptArg}; $inputPrompt | ${codexCommand}`
+        : `printf '%s\\n' ${promptArg} | ${codexCommand}`;
+
+    const geminiCommand = useAutoModel
+        ? `gemini --yolo -p ${promptArg}`
+        : `gemini --yolo --model ${quoteShellArg(normalizedModel, shellKind)} -p ${promptArg}`;
+    const cursorCommand = useAutoModel
+        ? `cursor-agent -f -p ${promptArg}`
+        : `cursor-agent -f --model ${quoteShellArg(normalizedModel, shellKind)} -p ${promptArg}`;
+
+    const providerCommand = settings.provider === 'gemini'
+        ? geminiCommand
+        : (settings.provider === 'cursor' ? cursorCommand : codexRun);
+
+    const codexLoginCommand = shellKind === 'powershell'
+        ? "if ($env:OPENAI_API_KEY) { $env:OPENAI_API_KEY | codex login --with-api-key | Out-Null }"
+        : 'if [ -n "$OPENAI_API_KEY" ]; then printenv OPENAI_API_KEY | codex login --with-api-key >/dev/null 2>&1 || true; fi';
+
+    return joinShellStatements([
+        buildShellSetDirectoryCommand(repoPath, shellKind),
+        settings.provider === 'codex' ? codexLoginCommand : null,
+        providerCommand,
+    ], shellKind);
 }
 
 interface StatusFileTreeNode {
@@ -234,6 +350,7 @@ function StatusFileTreeItem({
 }
 
 export function StatusView({ repoPath }: { repoPath: string }) {
+    const { resolvedTheme } = useTheme();
     const { data: status, isLoading, isError, error, refetch } = useGitStatus(repoPath);
     const { data: branches } = useGitBranches(repoPath);
     const action = useGitAction();
@@ -245,6 +362,19 @@ export function StatusView({ repoPath }: { repoPath: string }) {
     const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
     const [firstCommitDialogOpen, setFirstCommitDialogOpen] = useState(false);
     const [initialBranchName, setInitialBranchName] = useState('main');
+    const [autoCommitSettingsDialogOpen, setAutoCommitSettingsDialogOpen] = useState(false);
+    const [autoCommitSettingsDraft, setAutoCommitSettingsDraft] = useState<AutoCommitSettings>(DEFAULT_AUTO_COMMIT_SETTINGS);
+    const [autoCommitSettings, setAutoCommitSettings] = useState<AutoCommitSettings>(DEFAULT_AUTO_COMMIT_SETTINGS);
+    const [autoCommitAgentStatus, setAutoCommitAgentStatus] = useState<AppStatus | null>(null);
+    const [isLoadingAutoCommitAgentStatus, setIsLoadingAutoCommitAgentStatus] = useState(false);
+    const [autoCommitModalOpen, setAutoCommitModalOpen] = useState(false);
+    const [autoCommitModalError, setAutoCommitModalError] = useState<string | null>(null);
+    const [isPreparingAutoCommitAgent, setIsPreparingAutoCommitAgent] = useState(false);
+    const [autoCommitTerminalSrc, setAutoCommitTerminalSrc] = useState('/terminal');
+    const [autoCommitCommand, setAutoCommitCommand] = useState('');
+    const [isAutoCommitCommandInjected, setIsAutoCommitCommandInjected] = useState(false);
+    const [autoCommitIsFirstCommit, setAutoCommitIsFirstCommit] = useState(false);
+    const autoCommitTerminalRef = useRef<HTMLIFrameElement>(null);
     const [collapsedChangeFolders, setCollapsedChangeFolders] = useState<Set<string>>(new Set());
     const [collapsedStagedFolders, setCollapsedStagedFolders] = useState<Set<string>>(new Set());
     
@@ -288,6 +418,151 @@ export function StatusView({ repoPath }: { repoPath: string }) {
         setIsResizing(true);
         resizeRef.current = { startY: e.clientY, startHeight: commitBoxHeight };
     };
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const parsed = parseAutoCommitSettings(window.localStorage.getItem(AUTO_COMMIT_SETTINGS_STORAGE_KEY));
+        setAutoCommitSettings(parsed);
+        setAutoCommitSettingsDraft(parsed);
+    }, []);
+
+    const fetchAutoCommitAgentStatus = useCallback(async (
+        provider: AutoCommitProvider,
+        options?: { silent?: boolean },
+    ): Promise<AppStatus | null> => {
+        if (!options?.silent) {
+            setIsLoadingAutoCommitAgentStatus(true);
+        }
+
+        try {
+            const response = await fetch(`/api/agent/status?provider=${encodeURIComponent(provider)}`, {
+                cache: 'no-store',
+            });
+            const payload = await response.json().catch(() => null) as AgentStatusResponse | null;
+            if (!payload) {
+                throw new Error('Failed to load agent runtime status.');
+            }
+            setAutoCommitAgentStatus(payload.status);
+            return payload.status;
+        } catch (statusError) {
+            console.error('Failed to load auto-commit agent status:', statusError);
+            setAutoCommitAgentStatus(null);
+            return null;
+        } finally {
+            if (!options?.silent) {
+                setIsLoadingAutoCommitAgentStatus(false);
+            }
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!autoCommitSettingsDialogOpen) return;
+        void fetchAutoCommitAgentStatus(autoCommitSettingsDraft.provider);
+    }, [autoCommitSettingsDialogOpen, autoCommitSettingsDraft.provider, fetchAutoCommitAgentStatus]);
+
+    const autoCommitModelOptions = useMemo(() => {
+        const models = autoCommitAgentStatus?.models ?? [];
+        if (models.some((model) => model.id === FALLBACK_AUTO_MODEL_OPTION.id)) {
+            return models;
+        }
+        return [FALLBACK_AUTO_MODEL_OPTION, ...models];
+    }, [autoCommitAgentStatus]);
+
+    useEffect(() => {
+        if (!autoCommitSettingsDialogOpen) return;
+        const nextModel = autoCommitModelOptions.find((model) => model.id === autoCommitSettingsDraft.model)?.id
+            || autoCommitAgentStatus?.defaultModel
+            || autoCommitModelOptions[0]?.id
+            || 'auto';
+        if (nextModel !== autoCommitSettingsDraft.model) {
+            setAutoCommitSettingsDraft((prev) => ({ ...prev, model: nextModel }));
+        }
+    }, [
+        autoCommitAgentStatus?.defaultModel,
+        autoCommitModelOptions,
+        autoCommitSettingsDialogOpen,
+        autoCommitSettingsDraft.model,
+    ]);
+
+    const openAutoCommitModal = useCallback(async (isFirst: boolean, firstCommitBranchName?: string) => {
+        setIsPreparingAutoCommitAgent(true);
+        setAutoCommitModalError(null);
+        setIsAutoCommitCommandInjected(false);
+        setAutoCommitIsFirstCommit(isFirst);
+
+        try {
+            const ttydResult = await startTtydProcess();
+            if (!ttydResult.success) {
+                throw new Error(ttydResult.error || 'Failed to start ttyd.');
+            }
+
+            const shellKind = ttydResult.shellKind === 'powershell' ? 'powershell' : 'posix';
+            const persistenceMode = ttydResult.persistenceMode === 'tmux' ? 'tmux' : 'shell';
+            const prompt = buildAutoCommitAgentPrompt(isFirst, firstCommitBranchName);
+            const command = buildAutoCommitAgentCommand(repoPath, shellKind, autoCommitSettings, prompt);
+            const sessionName = `git-auto-commit-${Date.now()}`;
+            setAutoCommitTerminalSrc(buildTtydTerminalSrc(sessionName, 'terminal', undefined, {
+                persistenceMode,
+                shellKind,
+                workingDirectory: repoPath,
+            }));
+            setAutoCommitCommand(command);
+            setAutoCommitModalOpen(true);
+        } catch (commitError) {
+            setAutoCommitModalOpen(true);
+            setAutoCommitModalError(commitError instanceof Error ? commitError.message : 'Failed to initialize auto-commit agent.');
+        } finally {
+            setIsPreparingAutoCommitAgent(false);
+        }
+    }, [autoCommitSettings, repoPath]);
+
+    const closeAutoCommitModal = useCallback(() => {
+        setAutoCommitModalOpen(false);
+        setAutoCommitModalError(null);
+        setAutoCommitCommand('');
+        setAutoCommitIsFirstCommit(false);
+        setIsAutoCommitCommandInjected(false);
+    }, []);
+
+    const handleAutoCommitTerminalLoad = useCallback(() => {
+        if (!autoCommitModalOpen || !autoCommitCommand || !autoCommitTerminalRef.current || isAutoCommitCommandInjected) {
+            return;
+        }
+
+        const iframe = autoCommitTerminalRef.current;
+        const checkAndInject = (attempts = 0) => {
+            if (attempts > 40) {
+                setAutoCommitModalError('Timed out while waiting for terminal to initialize.');
+                return;
+            }
+
+            try {
+                const win = iframe.contentWindow as TerminalWindow | null;
+                if (win?.term) {
+                    const shouldUseDark = resolveShouldUseDarkTheme(
+                        resolvedTheme === 'light' || resolvedTheme === 'dark' ? resolvedTheme : 'auto',
+                        window.matchMedia('(prefers-color-scheme: dark)').matches,
+                    );
+                    applyThemeToTerminalWindow(
+                        win,
+                        shouldUseDark ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT,
+                    );
+                    win.term.paste(`${autoCommitCommand}\r`);
+                    setIsAutoCommitCommandInjected(true);
+                    setAutoCommitModalError(null);
+                    win.focus();
+                    return;
+                }
+
+                setTimeout(() => checkAndInject(attempts + 1), 300);
+            } catch (injectError) {
+                console.error('Failed to inject auto-commit command into terminal iframe:', injectError);
+                setAutoCommitModalError('Could not access ttyd terminal. Ensure ttyd is running and try again.');
+            }
+        };
+
+        setTimeout(() => checkAndInject(), 500);
+    }, [autoCommitCommand, autoCommitModalOpen, isAutoCommitCommandInjected, resolvedTheme]);
 
     const files = status?.files ?? EMPTY_FILES;
     const isFirstCommit = !!branches && branches.branches.length === 0;
@@ -406,16 +681,18 @@ export function StatusView({ repoPath }: { repoPath: string }) {
 
     const handleCommit = async () => {
         const trimmedSubject = subject.trim();
-        const trimmedBody = body.trim();
 
         if (isFirstCommit) {
             setFirstCommitDialogOpen(true);
             return;
         }
 
-        const commitData = trimmedSubject
-            ? { message: buildCommitMessage(trimmedSubject, body) }
-            : { prompt: trimmedBody || undefined };
+        if (!trimmedSubject) {
+            await openAutoCommitModal(false);
+            return;
+        }
+
+        const commitData = { message: buildCommitMessage(trimmedSubject, body) };
 
         await action.mutateAsync({
             repoPath,
@@ -429,13 +706,16 @@ export function StatusView({ repoPath }: { repoPath: string }) {
 
     const handleFirstCommitConfirm = async () => {
         const trimmedSubject = subject.trim();
-        const trimmedBody = body.trim();
         const trimmedBranchName = initialBranchName.trim();
         if (!trimmedBranchName) return;
 
-        const commitData = trimmedSubject
-            ? { message: buildCommitMessage(trimmedSubject, body), initialBranch: trimmedBranchName }
-            : { prompt: trimmedBody || undefined, initialBranch: trimmedBranchName };
+        if (!trimmedSubject) {
+            setFirstCommitDialogOpen(false);
+            await openAutoCommitModal(true, trimmedBranchName);
+            return;
+        }
+
+        const commitData = { message: buildCommitMessage(trimmedSubject, body), initialBranch: trimmedBranchName };
 
         await action.mutateAsync({
             repoPath,
@@ -467,6 +747,8 @@ export function StatusView({ repoPath }: { repoPath: string }) {
         }
         void handleFirstCommitConfirm();
     });
+    useEscapeDismiss(autoCommitSettingsDialogOpen, () => setAutoCommitSettingsDialogOpen(false));
+    useEscapeDismiss(autoCommitModalOpen, closeAutoCommitModal);
 
     const handleCommitShortcut = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -504,10 +786,24 @@ export function StatusView({ repoPath }: { repoPath: string }) {
             <div className="flex flex-1 min-w-0 flex-col gap-2 overflow-hidden">
                 <div className="flex min-h-[57px] shrink-0 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 dark:border-[#30363d] dark:bg-[#161b22]">
                     <h1 className="font-bold text-lg text-slate-900 dark:text-slate-100">Changes</h1>
-                    <button className={headerActionButtonClass} onClick={() => refetch()} disabled={action.isPending} title="Refresh status">
-                        {action.isPending ? <span className="loading loading-spinner loading-xs"></span> : <i className="iconoir-refresh-circle text-[16px]" aria-hidden="true" />}
-                        Refresh
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            className={headerActionButtonClass}
+                            onClick={() => {
+                                setAutoCommitSettingsDraft(autoCommitSettings);
+                                setAutoCommitSettingsDialogOpen(true);
+                            }}
+                            disabled={action.isPending}
+                            title="Auto-commit agent settings"
+                        >
+                            <i className="iconoir-settings text-[16px]" aria-hidden="true" />
+                            Settings
+                        </button>
+                        <button className={headerActionButtonClass} onClick={() => refetch()} disabled={action.isPending} title="Refresh status">
+                            {action.isPending ? <span className="loading loading-spinner loading-xs"></span> : <i className="iconoir-refresh-circle text-[16px]" aria-hidden="true" />}
+                            Refresh
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#30363d] dark:bg-[#161b22]">
@@ -730,6 +1026,141 @@ export function StatusView({ repoPath }: { repoPath: string }) {
                     </div>
                     <form method="dialog" className="modal-backdrop">
                         <button onClick={() => setFirstCommitDialogOpen(false)}>close</button>
+                    </form>
+                </dialog>
+            )}
+
+            {autoCommitSettingsDialogOpen && (
+                <dialog className="modal modal-open">
+                    <div className="modal-box">
+                        <h3 className="font-bold text-lg">Auto Commit Agent Settings</h3>
+                        <p className="py-3 opacity-70">
+                            Configure a global provider and model used when committing without a subject.
+                        </p>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="label py-1">
+                                    <span className="label-text text-xs uppercase tracking-wide opacity-70">Provider</span>
+                                </label>
+                                <select
+                                    className="select select-bordered w-full"
+                                    value={autoCommitSettingsDraft.provider}
+                                    onChange={(event) => {
+                                        const value = event.target.value as AutoCommitProvider;
+                                        setAutoCommitAgentStatus(null);
+                                        setAutoCommitSettingsDraft((prev) => ({
+                                            ...prev,
+                                            provider: value === 'gemini' || value === 'cursor' ? value : 'codex',
+                                            model: 'auto',
+                                        }));
+                                    }}
+                                >
+                                    <option value="codex">{AUTO_COMMIT_PROVIDER_LABELS.codex}</option>
+                                    <option value="gemini">{AUTO_COMMIT_PROVIDER_LABELS.gemini}</option>
+                                    <option value="cursor">{AUTO_COMMIT_PROVIDER_LABELS.cursor}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="label py-1">
+                                    <span className="label-text text-xs uppercase tracking-wide opacity-70">Model</span>
+                                </label>
+                                <select
+                                    className="select select-bordered w-full"
+                                    value={autoCommitSettingsDraft.model}
+                                    onChange={(event) => {
+                                        setAutoCommitSettingsDraft((prev) => ({
+                                            ...prev,
+                                            model: event.target.value,
+                                        }));
+                                    }}
+                                    disabled={isLoadingAutoCommitAgentStatus}
+                                >
+                                    {autoCommitModelOptions.map((model) => (
+                                        <option key={model.id} value={model.id}>
+                                            {model.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="mt-1 text-xs opacity-60">
+                                    {isLoadingAutoCommitAgentStatus
+                                        ? 'Loading available models...'
+                                        : (autoCommitModelOptions.find((model) => model.id === autoCommitSettingsDraft.model)?.description
+                                            || 'Use `auto` to let the selected provider decide.')}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="modal-action">
+                            <button className="btn" onClick={() => setAutoCommitSettingsDialogOpen(false)}>
+                                Cancel
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => {
+                                    const normalized: AutoCommitSettings = {
+                                        provider: autoCommitSettingsDraft.provider,
+                                        model: autoCommitSettingsDraft.model || 'auto',
+                                    };
+                                    setAutoCommitSettings(normalized);
+                                    if (typeof window !== 'undefined') {
+                                        window.localStorage.setItem(AUTO_COMMIT_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
+                                    }
+                                    setAutoCommitSettingsDialogOpen(false);
+                                }}
+                            >
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                    <form method="dialog" className="modal-backdrop">
+                        <button onClick={() => setAutoCommitSettingsDialogOpen(false)}>close</button>
+                    </form>
+                </dialog>
+            )}
+
+            {autoCommitModalOpen && (
+                <dialog className="modal modal-open">
+                    <div className="modal-box max-w-5xl p-0 overflow-hidden">
+                        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-[#30363d]">
+                            <div>
+                                <h3 className="font-bold text-base">
+                                    Auto Commit with {AUTO_COMMIT_PROVIDER_LABELS[autoCommitSettings.provider] || autoCommitSettings.provider}
+                                </h3>
+                                <p className="text-xs opacity-70">
+                                    Model: {autoCommitSettings.model || 'auto'}
+                                    {autoCommitIsFirstCommit ? ' • First commit flow' : ''}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onClick={closeAutoCommitModal}
+                            >
+                                Close
+                            </button>
+                        </div>
+                        <div className="p-4">
+                            {autoCommitModalError ? (
+                                <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200">
+                                    {autoCommitModalError}
+                                </div>
+                            ) : null}
+                            {isPreparingAutoCommitAgent ? (
+                                <div className="flex h-96 items-center justify-center">
+                                    <span className="loading loading-spinner loading-md text-base-content/60"></span>
+                                </div>
+                            ) : (
+                                <iframe
+                                    ref={autoCommitTerminalRef}
+                                    src={autoCommitTerminalSrc}
+                                    className="h-[70vh] w-full rounded-md border border-slate-200 bg-black dark:border-[#30363d]"
+                                    onLoad={handleAutoCommitTerminalLoad}
+                                    title="Auto Commit Agent Terminal"
+                                />
+                            )}
+                        </div>
+                    </div>
+                    <form method="dialog" className="modal-backdrop">
+                        <button onClick={closeAutoCommitModal}>close</button>
                     </form>
                 </dialog>
             )}
