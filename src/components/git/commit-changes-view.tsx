@@ -383,7 +383,13 @@ export function CommitChangesView({
                     </div>
                     <div className="max-w-full overflow-hidden">
                       {isWorkingTreeSelection ? (
-                        <DiffView repoPath={repoPath} filePath={file.path} />
+                        <DiffView
+                          repoPath={repoPath}
+                          filePath={file.path}
+                          splitView={splitView}
+                          onSplitViewChange={setSplitView}
+                          showHeader={false}
+                        />
                       ) : (
                         <CommitFileDiffView
                           key={`${selectionKey}:${file.path}`}
@@ -434,7 +440,13 @@ export function CommitChangesView({
             </div>
             <div ref={diffViewportRef} className="flex-1 overflow-auto diff-viewer-wrapper">
               {isWorkingTreeSelection ? (
-                <DiffView repoPath={repoPath} filePath={selectedFile} />
+                <DiffView
+                  repoPath={repoPath}
+                  filePath={selectedFile}
+                  splitView={splitView}
+                  onSplitViewChange={setSplitView}
+                  showHeader={false}
+                />
               ) : (
                 <CommitFileDiffView
                   key={`${selectionKey}:${selectedFile}`}

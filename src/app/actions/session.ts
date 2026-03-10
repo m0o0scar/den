@@ -20,6 +20,7 @@ import {
 } from '@/lib/agent/reasoning';
 import { sortSessionHistoryForTimeline } from '@/lib/agent/history-order';
 import { publishSessionListUpdated } from '@/lib/sessionNotificationServer';
+import { runInBackground } from '@/lib/background-task';
 import { buildTerminalProcessEnv } from '@/lib/terminal-process-env';
 import { getTmuxSessionName } from '@/lib/terminal-session';
 import {
@@ -2406,12 +2407,13 @@ export async function deleteSession(sessionName: string): Promise<{ success: boo
 
 export async function deleteSessionInBackground(sessionName: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const metadata = await getSessionMetadata(sessionName);
-    if (!metadata) {
-      return { success: false, error: 'Session metadata not found' };
-    }
+    runInBackground(async () => {
+      await deleteSession(sessionName);
+    }, (error) => {
+      console.error(`Failed to execute background session deletion for "${sessionName}":`, error);
+    });
 
-    return await deleteSession(sessionName);
+    return { success: true };
   } catch (e: unknown) {
     console.error('Failed to schedule background session deletion:', e);
     return { success: false, error: getErrorMessage(e) };

@@ -1,20 +1,36 @@
 'use client';
 
 import { useGitDiff } from '@/hooks/use-git';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useId } from 'react';
 import { useTheme } from 'next-themes';
 import { getChangedLineCountFromDiff, isFileBinary, isImageFile } from '@/lib/utils';
 import { GroupedDiffViewer } from './grouped-diff-viewer';
 import { ImageDiffView } from './image-diff-view';
 
-export function DiffView({ repoPath, filePath }: { repoPath: string, filePath: string }) {
+type DiffViewProps = {
+  repoPath: string;
+  filePath: string;
+  splitView?: boolean;
+  onSplitViewChange?: (value: boolean) => void;
+  showHeader?: boolean;
+};
+
+export function DiffView({
+  repoPath,
+  filePath,
+  splitView: controlledSplitView,
+  onSplitViewChange,
+  showHeader = true,
+}: DiffViewProps) {
   const { data, isLoading } = useGitDiff(repoPath, filePath);
   const diffScrollContainerRef = useRef<HTMLDivElement>(null);
+  const splitViewToggleId = useId();
   
   // Storage key for split view preference
   const storageKey = 'git-web:diff-view-split';
+  const isSplitViewControlled = typeof controlledSplitView === 'boolean';
   
-  const [splitView, setSplitView] = useState(() => {
+  const [uncontrolledSplitView, setUncontrolledSplitView] = useState(() => {
     if (typeof window === 'undefined') return true;
     try {
       const stored = localStorage.getItem(storageKey);
@@ -29,15 +45,40 @@ export function DiffView({ repoPath, filePath }: { repoPath: string, filePath: s
   const renderAnyway = renderAnywayFilePath === filePath;
   
   const { resolvedTheme } = useTheme();
+  const splitView = controlledSplitView ?? uncontrolledSplitView;
 
   // Save split view preference when it changes
   useEffect(() => {
+    if (isSplitViewControlled) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(splitView));
     } catch (e) {
       console.error('Failed to save split view preference:', e);
     }
-  }, [splitView]);
+  }, [isSplitViewControlled, splitView]);
+
+  const handleSplitViewChange = (value: boolean) => {
+    if (!isSplitViewControlled) {
+      setUncontrolledSplitView(value);
+    }
+    onSplitViewChange?.(value);
+  };
+
+  const header = showHeader ? (
+    <div className="flex items-center justify-between px-4 h-[57px] border-b border-base-300 shrink-0 bg-base-100">
+      <span className="text-sm font-mono truncate max-w-[70%]" title={filePath}>{filePath}</span>
+      <div className="flex items-center gap-2">
+        <label htmlFor={splitViewToggleId} className="text-[10px] uppercase tracking-wider font-bold cursor-pointer opacity-70">Split View</label>
+        <input
+          type="checkbox"
+          id={splitViewToggleId}
+          checked={splitView}
+          onChange={(e) => handleSplitViewChange(e.target.checked)}
+          className="toggle toggle-sm toggle-primary"
+        />
+      </div>
+    </div>
+  ) : null;
 
   // Reset diff scroll position when switching files.
   useEffect(() => {
@@ -66,9 +107,11 @@ export function DiffView({ repoPath, filePath }: { repoPath: string, filePath: s
   if (isImage) {
     return (
       <div className="flex flex-col h-full bg-base-100">
-        <div className="flex items-center justify-between px-4 h-[57px] border-b border-base-300 shrink-0 bg-base-100">
-          <span className="text-sm font-mono truncate max-w-[70%]" title={filePath}>{filePath}</span>
-        </div>
+        {showHeader ? (
+          <div className="flex items-center justify-between px-4 h-[57px] border-b border-base-300 shrink-0 bg-base-100">
+            <span className="text-sm font-mono truncate max-w-[70%]" title={filePath}>{filePath}</span>
+          </div>
+        ) : null}
         <div className="flex-1 overflow-auto">
           <ImageDiffView filePath={filePath} imageDiff={data.imageDiff} />
         </div>
@@ -82,9 +125,11 @@ export function DiffView({ repoPath, filePath }: { repoPath: string, filePath: s
   if (isBinary) {
     return (
       <div className="flex flex-col h-full bg-base-100">
-        <div className="flex items-center justify-between px-4 h-[57px] border-b border-base-300 shrink-0 bg-base-100">
-          <span className="text-sm font-mono truncate max-w-[70%]" title={filePath}>{filePath}</span>
-        </div>
+        {showHeader ? (
+          <div className="flex items-center justify-between px-4 h-[57px] border-b border-base-300 shrink-0 bg-base-100">
+            <span className="text-sm font-mono truncate max-w-[70%]" title={filePath}>{filePath}</span>
+          </div>
+        ) : null}
         <div className="flex-1 flex items-center justify-center opacity-50">
           Binary file - diff not available
         </div>
@@ -104,19 +149,7 @@ export function DiffView({ repoPath, filePath }: { repoPath: string, filePath: s
 
   return (
     <div className="flex flex-col h-full bg-base-100">
-      <div className="flex items-center justify-between px-4 h-[57px] border-b border-base-300 shrink-0 bg-base-100">
-        <span className="text-sm font-mono truncate max-w-[70%]" title={filePath}>{filePath}</span>
-        <div className="flex items-center gap-2">
-          <label htmlFor="split-view" className="text-[10px] uppercase tracking-wider font-bold cursor-pointer opacity-70">Split View</label>
-          <input
-            type="checkbox"
-            id="split-view"
-            checked={splitView}
-            onChange={(e) => setSplitView(e.target.checked)}
-            className="toggle toggle-sm toggle-primary"
-          />
-        </div>
-      </div>
+      {header}
       <div ref={diffScrollContainerRef} className="flex-1 overflow-auto diff-viewer-wrapper">
         {isLargeDiff && !renderAnyway ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-center p-4">
