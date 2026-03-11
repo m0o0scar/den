@@ -1,12 +1,16 @@
-export type TerminalProcessEnv = Record<string, string | undefined>;
+export type TerminalProcessEnv = NodeJS.ProcessEnv;
 
 export function buildTerminalProcessEnv(
   baseEnv: TerminalProcessEnv = process.env,
-): TerminalProcessEnv {
+): NodeJS.ProcessEnv {
   const {
     TURBOPACK: _turbopack,
     PORT: _port,
     NODE_ENV: _nodeEnv,
+    AUTH0_DOMAIN: _auth0Domain,
+    AUTH0_CLIENT_ID: _auth0ClientId,
+    AUTH0_CLIENT_SECRET: _auth0ClientSecret,
+    AUTH0_SECRET: _auth0Secret,
     COLORTERM: _colorTerm,
     FORCE_COLOR: _forceColor,
     CLICOLOR: _cliColor,
@@ -21,5 +25,5 @@ export function buildTerminalProcessEnv(
     CLICOLOR: '0',
     CLICOLOR_FORCE: '0',
     FORCE_COLOR: '0',
-  };
+  } as unknown as NodeJS.ProcessEnv;
 }
