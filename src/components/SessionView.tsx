@@ -887,7 +887,8 @@ export function SessionView({
 
         try {
             const textarea = terminalSession.iframe.contentDocument?.querySelector('textarea.xterm-helper-textarea');
-            const TerminalKeyboardEvent = terminalSession.win.KeyboardEvent || KeyboardEvent;
+            const terminalWindow = terminalSession.win as Window & typeof globalThis;
+            const TerminalKeyboardEvent = terminalWindow.KeyboardEvent || KeyboardEvent;
             if (textarea && typeof textarea.dispatchEvent === 'function') {
                 const eventInit = {
                     bubbles: true,
@@ -897,7 +898,7 @@ export function SessionView({
                     keyCode: 13,
                     key: 'Enter',
                     which: 13,
-                    view: terminalSession.win,
+                    view: terminalWindow,
                 };
                 textarea.dispatchEvent(new TerminalKeyboardEvent('keydown', eventInit));
                 textarea.dispatchEvent(new TerminalKeyboardEvent('keypress', eventInit));
