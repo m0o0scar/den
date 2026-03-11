@@ -420,7 +420,7 @@ function renderHistoryItem(item: SessionAgentHistoryItem, options: RenderHistory
       return renderCollapsibleHistoryItem({
         label: 'Reasoning',
         title: plainTextPreview(item.summary) || plainTextPreview(item.text) || undefined,
-        className: 'rounded-xl border border-violet-200/80 bg-violet-50/45 px-3 py-2 text-sm text-violet-950 dark:border-violet-500/25 dark:bg-violet-500/8 dark:text-violet-100',
+        className: 'rounded-xl bg-violet-50/45 px-3 py-2 text-sm text-violet-950 dark:bg-violet-500/8 dark:text-violet-100',
         summaryClassName: 'flex min-w-0 items-baseline gap-2 cursor-pointer list-none',
         labelClassName: 'shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-200',
         titleClassName: 'min-w-0 truncate whitespace-nowrap text-[11px] font-normal text-violet-700/75 dark:text-violet-200/75',
@@ -443,7 +443,7 @@ function renderHistoryItem(item: SessionAgentHistoryItem, options: RenderHistory
       });
     case 'plan':
       return (
-        <div className="rounded-2xl border border-sky-200 bg-sky-50/70 px-4 py-3 text-sm text-sky-900 shadow-sm dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
+        <div className="rounded-2xl bg-sky-50/70 px-4 py-3 text-sm text-sky-900 shadow-sm dark:bg-sky-500/10 dark:text-sky-100">
           <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-200">Plan</div>
           <div className="whitespace-pre-wrap break-words">{item.text}</div>
           {timestamp ? <div className="mt-3 text-[10px] text-sky-700/70 dark:text-sky-200/70">{timestamp}</div> : null}
@@ -453,7 +453,7 @@ function renderHistoryItem(item: SessionAgentHistoryItem, options: RenderHistory
       return renderCollapsibleHistoryItem({
         label: 'Command',
         title: firstLinePreview(item.command) || undefined,
-        className: 'rounded-xl border border-slate-200/80 bg-slate-50/65 px-3 py-2 text-sm dark:border-[#30363d] dark:bg-[#0d1117]/75',
+        className: 'rounded-xl bg-slate-50/65 px-3 py-2 text-sm dark:bg-[#0d1117]/75',
         summaryClassName: 'flex min-w-0 items-baseline gap-2 cursor-pointer list-none',
         labelClassName: 'shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 dark:text-slate-300',
         titleClassName: 'min-w-0 truncate whitespace-nowrap font-mono text-[11px] font-normal text-slate-500 dark:text-slate-400',
@@ -487,7 +487,7 @@ function renderHistoryItem(item: SessionAgentHistoryItem, options: RenderHistory
       return renderCollapsibleHistoryItem({
         label: `Tool: ${toolName}`,
         title: toolTitle,
-        className: 'rounded-xl border border-slate-200/80 bg-slate-50/65 px-3 py-2 text-sm dark:border-[#30363d] dark:bg-[#0d1117]/75',
+        className: 'rounded-xl bg-slate-50/65 px-3 py-2 text-sm dark:bg-[#0d1117]/75',
         summaryClassName: 'flex min-w-0 items-baseline gap-2 cursor-pointer list-none',
         labelClassName: 'shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 dark:text-slate-300',
         titleClassName: 'min-w-0 truncate whitespace-nowrap text-[11px] font-normal text-slate-500 dark:text-slate-400',
@@ -520,7 +520,7 @@ function renderHistoryItem(item: SessionAgentHistoryItem, options: RenderHistory
             ? `${item.changes[0].path.trim()} +${item.changes.length - 1} more`
             : item.changes[0].path.trim())
           : (item.changes.length > 0 ? `${item.changes.length} files` : undefined),
-        className: 'rounded-xl border border-emerald-200/80 bg-emerald-50/50 px-3 py-2 text-sm text-emerald-950 dark:border-emerald-500/25 dark:bg-emerald-500/8 dark:text-emerald-100',
+        className: 'rounded-xl bg-emerald-50/50 px-3 py-2 text-sm text-emerald-950 dark:bg-emerald-500/8 dark:text-emerald-100',
         summaryClassName: 'flex min-w-0 items-baseline gap-2 cursor-pointer list-none',
         labelClassName: 'shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-200',
         titleClassName: 'min-w-0 truncate whitespace-nowrap text-[11px] font-normal text-emerald-700/75 dark:text-emerald-200/75',
