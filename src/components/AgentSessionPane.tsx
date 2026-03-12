@@ -19,6 +19,7 @@ import {
   reconcileOptimisticUserMessages,
   type OptimisticUserMessage,
 } from '@/lib/optimistic-user-history';
+import { projectSessionHistoryEvent } from '@/lib/agent/session-history-events';
 import { getBaseName } from '@/lib/path';
 import { buildRepoMentionSuggestions } from '@/lib/repo-mention-suggestions';
 import type {
@@ -825,6 +826,8 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
         socket.onopen = () => {
           reconnectAttempt = 0;
           setSocketConnected(true);
+          setError(null);
+          scheduleRefresh(0);
         };
         socket.onerror = () => {
           socket?.close();
@@ -843,7 +846,19 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
             }
 
             setRuntime(message.snapshot);
-            scheduleRefresh();
+            setError(null);
+            setHistory((current) => {
+              const projected = projectSessionHistoryEvent(current, sessionId, message.event, message.timestamp);
+              if (!projected.handled) {
+                scheduleRefresh();
+                return current;
+              }
+              return projected.changed ? projected.history : current;
+            });
+
+            if (message.event.type === 'turn_completed' || message.event.type === 'error') {
+              scheduleRefresh(250);
+            }
           } catch {
             // Ignore malformed socket payloads.
           }

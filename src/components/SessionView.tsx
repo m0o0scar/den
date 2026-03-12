@@ -89,6 +89,11 @@ const TERMINAL_LOADING_OVERLAY_CLASS = 'pointer-events-none absolute inset-0 z-1
 const FOLDER_MODE_GIT_DISABLED_REASON = 'Git controls are unavailable in folder mode because no repository context is active.';
 const MAIN_TERMINAL_TAB_ID = 'terminal';
 
+const readIsDocumentForegrounded = (): boolean => {
+    if (typeof document === 'undefined') return true;
+    return document.visibilityState === 'visible' && document.hasFocus();
+};
+
 const getFloatingTerminalBootstrapSlot = (tabId: string): TerminalBootstrapSlot => {
     if (tabId === MAIN_TERMINAL_TAB_ID) return MAIN_TERMINAL_TAB_ID;
     return `terminal:${tabId}`;
@@ -698,6 +703,7 @@ export function SessionView({
     const [terminalTabIds, setTerminalTabIds] = useState<string[]>([MAIN_TERMINAL_TAB_ID]);
     const [activeTerminalTabId, setActiveTerminalTabId] = useState<string>(MAIN_TERMINAL_TAB_ID);
     const activeTerminalTabIdRef = useRef(activeTerminalTabId);
+    const [isSessionPageForegrounded, setIsSessionPageForegrounded] = useState<boolean>(() => readIsDocumentForegrounded());
     const pendingDevServerPreviewLoadRef = useRef(false);
     const attemptedPreviewRestoreRef = useRef(false);
     const floatingTerminalEnvironments = useMemo(
@@ -748,6 +754,23 @@ export function SessionView({
     useEffect(() => {
         activeTerminalTabIdRef.current = activeTerminalTabId;
     }, [activeTerminalTabId]);
+
+    useEffect(() => {
+        const syncForegroundState = () => {
+            setIsSessionPageForegrounded(readIsDocumentForegrounded());
+        };
+
+        syncForegroundState();
+        document.addEventListener('visibilitychange', syncForegroundState);
+        window.addEventListener('focus', syncForegroundState);
+        window.addEventListener('blur', syncForegroundState);
+
+        return () => {
+            document.removeEventListener('visibilitychange', syncForegroundState);
+            window.removeEventListener('focus', syncForegroundState);
+            window.removeEventListener('blur', syncForegroundState);
+        };
+    }, []);
 
     const ensureTerminalService = useCallback(async (): Promise<boolean> => {
         if (isTerminalServiceReady) {
@@ -1299,6 +1322,17 @@ export function SessionView({
 
     // Auto-scroll and focus terminal when restored from minimized state
     useEffect(() => {
+        if (
+            !isSessionPageForegrounded
+            || isRightPanelCollapsed
+            || isRepoViewActive
+            || isTerminalMinimized
+        ) {
+            stopTerminalProcessMonitor();
+            setIsTerminalForegroundProcessRunning(false);
+            return;
+        }
+
         const iframe = terminalFramesRef.current[activeTerminalTabId];
         if (!iframe) {
             stopTerminalProcessMonitor();
@@ -1316,7 +1350,15 @@ export function SessionView({
         }
         stopTerminalProcessMonitor();
         setIsTerminalForegroundProcessRunning(false);
-    }, [activeTerminalTabId, startTerminalProcessMonitor, stopTerminalProcessMonitor]);
+    }, [
+        activeTerminalTabId,
+        isRepoViewActive,
+        isRightPanelCollapsed,
+        isSessionPageForegrounded,
+        isTerminalMinimized,
+        startTerminalProcessMonitor,
+        stopTerminalProcessMonitor,
+    ]);
 
     useEffect(() => {
         if (!isTerminalMinimized) {
@@ -1615,6 +1657,9 @@ export function SessionView({
             setDivergence({ ahead: 0, behind: 0 });
             return;
         }
+        if (!isSessionPageForegrounded) {
+            return;
+        }
 
         void loadSessionDivergence();
         const timer = window.setInterval(() => {
@@ -1622,7 +1667,7 @@ export function SessionView({
         }, 60000);
 
         return () => window.clearInterval(timer);
-    }, [currentBaseBranch, loadSessionDivergence, sessionName]);
+    }, [currentBaseBranch, isSessionPageForegrounded, loadSessionDivergence, sessionName]);
 
     const runMerge = async (): Promise<boolean> => {
         if (!sessionName) return false;
@@ -2021,6 +2066,9 @@ export function SessionView({
             setDevServerTerminalMarker(false);
             return;
         }
+        if (isRightPanelCollapsed || isRepoViewActive || !isSessionPageForegrounded) {
+            return;
+        }
 
         let cancelled = false;
         const sync = async () => {
@@ -2037,7 +2085,14 @@ export function SessionView({
             cancelled = true;
             window.clearInterval(intervalId);
         };
-    }, [devServerScript, setDevServerTerminalMarker, syncDevServerStateFromTerminal]);
+    }, [
+        devServerScript,
+        isRepoViewActive,
+        isRightPanelCollapsed,
+        isSessionPageForegrounded,
+        setDevServerTerminalMarker,
+        syncDevServerStateFromTerminal,
+    ]);
 
     const handleStartDevServer = async () => {
         const script = devServerScript?.trim();
@@ -2191,7 +2246,13 @@ export function SessionView({
                         setFloatingTerminalThemeReadyForTab(tabId, true);
                     }
 
-                    if (isActiveTerminalFrame()) {
+                    if (
+                        isActiveTerminalFrame()
+                        && isSessionPageForegrounded
+                        && !isRightPanelCollapsed
+                        && !isRepoViewActive
+                        && !isTerminalMinimized
+                    ) {
                         startTerminalProcessMonitor(iframe, term);
                     }
 

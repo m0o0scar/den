@@ -65,8 +65,8 @@ type ThemeMode = 'auto' | 'light' | 'dark';
 const DEFAULT_PROJECT_STARTUP_COMMAND = '';
 const DEFAULT_PROJECT_DEV_SERVER_COMMAND = '';
 const THEME_MODE_SEQUENCE: ThemeMode[] = ['auto', 'light', 'dark'];
-const HOME_REPO_DISCOVERY_IDLE_TIMEOUT_MS = 1500;
-const HOME_REPO_DISCOVERY_MAX_AUTOSTART = 6;
+const HOME_REPO_DISCOVERY_IDLE_TIMEOUT_MS = 4000;
+const HOME_REPO_DISCOVERY_MAX_AUTOSTART = 3;
 
 const SESSION_MODE_STORAGE_KEY = 'viba:new-session-mode';
 const AGENT_PROVIDER_MODEL_CACHE_STORAGE_KEY_PREFIX = 'viba:agent-provider-models:';
@@ -79,6 +79,11 @@ const AGENT_PROVIDER_FALLBACK_LABELS: Record<string, string> = {
 };
 const repoCardTiltFrameByElement = new WeakMap<HTMLElement, number>();
 const repoCardTiltRectByElement = new WeakMap<HTMLElement, DOMRect>();
+
+function readIsDocumentForegrounded(): boolean {
+  if (typeof document === 'undefined') return true;
+  return document.visibilityState === 'visible' && document.hasFocus();
+}
 
 type PredefinedPrompt = {
   id: string;
@@ -320,6 +325,7 @@ export default function GitRepoSelector({
   const [isLoadingCloneCredentialOptions, setIsLoadingCloneCredentialOptions] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>('auto');
   const [isDarkThemeActive, setIsDarkThemeActive] = useState(false);
+  const [isPageForegrounded, setIsPageForegrounded] = useState<boolean>(() => readIsDocumentForegrounded());
 
   const [config, setConfig] = useState<Config | null>(null);
 
@@ -625,6 +631,23 @@ export default function GitRepoSelector({
       // Ignore localStorage errors and keep default theme mode.
     }
     setThemeMode('auto');
+  }, []);
+
+  useEffect(() => {
+    const syncForegroundState = () => {
+      setIsPageForegrounded(readIsDocumentForegrounded());
+    };
+
+    syncForegroundState();
+    document.addEventListener('visibilitychange', syncForegroundState);
+    window.addEventListener('focus', syncForegroundState);
+    window.addEventListener('blur', syncForegroundState);
+
+    return () => {
+      document.removeEventListener('visibilitychange', syncForegroundState);
+      window.removeEventListener('focus', syncForegroundState);
+      window.removeEventListener('blur', syncForegroundState);
+    };
   }, []);
 
   useEffect(() => {
@@ -2118,7 +2141,7 @@ export default function GitRepoSelector({
   }, [config, mode, saveAgentRuntimeSettings, selectedAgentModel, selectedAgentProvider, selectedReasoningEffort, selectedRepo]);
 
   useEffect(() => {
-    if (!isWaitingForLogin || !waitingForLoginProvider) {
+    if (!isWaitingForLogin || !waitingForLoginProvider || !isPageForegrounded) {
       return;
     }
 
@@ -2151,7 +2174,7 @@ export default function GitRepoSelector({
         window.clearTimeout(timer);
       }
     };
-  }, [agentProviders, fetchAgentStatus, isWaitingForLogin, waitingForLoginProvider]);
+  }, [agentProviders, fetchAgentStatus, isPageForegrounded, isWaitingForLogin, waitingForLoginProvider]);
 
   const startSession = async () => {
     if (!selectedRepo) return;
@@ -2576,7 +2599,7 @@ export default function GitRepoSelector({
   }, [discoverHomeProjectRepos, router]);
 
   useEffect(() => {
-    if (mode !== 'home' || recentProjects.length === 0) return;
+    if (mode !== 'home' || !isPageForegrounded || recentProjects.length === 0) return;
     const runtimeWindow = window as Window & {
       requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
       cancelIdleCallback?: (handle: number) => void;
@@ -2630,7 +2653,7 @@ export default function GitRepoSelector({
       cancelled = true;
       clearScheduledWork();
     };
-  }, [discoverHomeProjectRepos, mode, projectGitReposByPath, recentProjects]);
+  }, [discoverHomeProjectRepos, isPageForegrounded, mode, projectGitReposByPath, recentProjects]);
 
   useEffect(() => {
     if (mode !== 'home') return;
