@@ -28,6 +28,7 @@
     "build:webpack": "next build --webpack",
     "prepack": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\" && npm run build",
     "start": "node ./bin/viba.mjs",
+    "tunnel": "npx nport 3200 -s palx",
     "lint": "eslint",
     "test": "node --experimental-strip-types --test src/**/*.test.ts test/**/*.test.mjs",
     "cli": "node ./bin/viba.mjs",
