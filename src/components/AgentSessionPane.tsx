@@ -775,32 +775,6 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
   }, [historySizeVersion, loading, optimisticMessages, history]);
 
   useEffect(() => {
-    const element = timelineRef.current;
-    const content = timelineContentRef.current;
-    if (!element || !content) return;
-
-    const updateViewport = () => {
-      setTimelineViewportHeight(element.clientHeight);
-      setTimelineScrollTop(element.scrollTop);
-    };
-
-    updateViewport();
-
-    const observer = new ResizeObserver(() => {
-      updateViewport();
-      if (shouldStickToBottomRef.current) {
-        element.scrollTop = element.scrollHeight;
-      }
-    });
-
-    observer.observe(element);
-    observer.observe(content);
-    return () => {
-      observer.disconnect();
-    };
-  }, [displayHistory.length, liveTailHistory.length, virtualizedHistory.length]);
-
-  useEffect(() => {
     let cancelled = false;
     let socket: WebSocket | null = null;
     let reconnectTimer: number | null = null;
@@ -997,6 +971,33 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
         };
       });
   }, [historyMetrics.items, virtualizedHistory, visibleHistoryRange.endIndex, visibleHistoryRange.startIndex]);
+
+  useEffect(() => {
+    const element = timelineRef.current;
+    const content = timelineContentRef.current;
+    if (!element || !content) return;
+
+    const updateViewport = () => {
+      setTimelineViewportHeight(element.clientHeight);
+      setTimelineScrollTop(element.scrollTop);
+    };
+
+    updateViewport();
+
+    const observer = new ResizeObserver(() => {
+      updateViewport();
+      if (shouldStickToBottomRef.current) {
+        element.scrollTop = element.scrollHeight;
+      }
+    });
+
+    observer.observe(element);
+    observer.observe(content);
+    return () => {
+      observer.disconnect();
+    };
+  }, [displayHistory.length, liveTailHistory.length, virtualizedHistory.length]);
+
   const handleMeasureHistoryItem = useCallback((key: string, height: number) => {
     const nextHeight = Math.ceil(height);
     if (!Number.isFinite(nextHeight) || nextHeight <= 0) return;

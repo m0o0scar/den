@@ -368,6 +368,18 @@ function runNext(args) {
   });
 }
 
+function getDevServerArgs(port) {
+  const bundler = process.env.PALX_NEXT_DEV_BUNDLER?.trim().toLowerCase();
+  const args = ["dev"];
+
+  if (bundler === "webpack") {
+    args.push("--webpack");
+  }
+
+  args.push("-p", String(port));
+  return args;
+}
+
 function ensureBuildExists() {
   const buildIdPath = path.join(APP_ROOT, ".next", "BUILD_ID");
   if (!fs.existsSync(buildIdPath)) {
@@ -475,7 +487,7 @@ async function main() {
     if (options.mode === "dev") {
       const url = `http://localhost:${port}`;
       console.log(`Starting Palx in development mode on ${url}`);
-      const nextPromise = runNext(["dev", "--webpack", "-p", String(port)]);
+      const nextPromise = runNext(getDevServerArgs(port));
       void autoOpenBrowserWhenReady(url, port, options.mode);
       process.exit(await nextPromise);
     }
