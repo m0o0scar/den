@@ -70,6 +70,7 @@ export function HomeRepoCard({
   const hasDiscoveredGitRepos = Array.isArray(projectGitRepos);
   const hasGitRepos = discoveredProjectGitRepos.length > 0;
   const hasMultipleGitRepos = discoveredProjectGitRepos.length > 1;
+  const shouldShowGitWorkspaceButton = isDiscoveringProjectGitRepos || !hasDiscoveredGitRepos || hasGitRepos;
 
   useEffect(() => {
     if (!isGitRepoMenuOpen) return;
@@ -140,53 +141,52 @@ export function HomeRepoCard({
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <div className="relative" ref={gitRepoMenuRef}>
-                <button
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (isDiscoveringProjectGitRepos) return;
-                    if (hasDiscoveredGitRepos && !hasGitRepos) return;
-                    if (!hasMultipleGitRepos) {
-                      onOpenGitWorkspace(project);
-                      return;
-                    }
-                    setIsGitRepoMenuOpen((previous) => !previous);
-                  }}
-                  className="btn btn-circle btn-xs border-0 bg-white/50 text-slate-600 opacity-100 shadow-none backdrop-blur-sm transition-opacity md:opacity-0 md:group-hover:opacity-100 hover:bg-white/80 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-80 disabled:hover:bg-white/50 dark:bg-white/10 dark:text-slate-300 dark:hover:bg-white/20 dark:hover:text-white dark:disabled:hover:bg-white/10"
-                  title={isDiscoveringProjectGitRepos
-                    ? 'Discovering repositories...'
-                    : hasDiscoveredGitRepos && !hasGitRepos
-                      ? 'No Git repositories found in this project'
-                    : hasMultipleGitRepos
-                        ? 'Select a repository'
-                        : 'Open Git Workspace'}
-                  disabled={isDiscoveringProjectGitRepos || (hasDiscoveredGitRepos && !hasGitRepos)}
-                >
-                  <GitBranchIcon className="h-3.5 w-3.5" />
-                </button>
-                {hasMultipleGitRepos && isGitRepoMenuOpen && (
-                  <div className="absolute right-0 top-8 z-30 max-h-56 w-52 overflow-auto rounded-lg border border-slate-200 bg-white p-1 shadow-xl dark:border-[#30363d] dark:bg-[#161b22]">
-                    {discoveredProjectGitRepos.map((repoPath) => {
-                      const relativeRepoPath = toProjectRelativeRepoPath(project, repoPath);
-                      return (
-                        <button
-                          key={repoPath}
-                          type="button"
-                          className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-[#30363d]/70"
-                          title={repoPath}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setIsGitRepoMenuOpen(false);
-                            onOpenGitWorkspace(project, repoPath);
-                          }}
-                        >
-                          <span className="truncate">{relativeRepoPath}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              {shouldShowGitWorkspaceButton && (
+                <div className="relative" ref={gitRepoMenuRef}>
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (isDiscoveringProjectGitRepos) return;
+                      if (!hasMultipleGitRepos) {
+                        onOpenGitWorkspace(project);
+                        return;
+                      }
+                      setIsGitRepoMenuOpen((previous) => !previous);
+                    }}
+                    className="btn btn-circle btn-xs border-0 bg-white/50 text-slate-600 opacity-100 shadow-none backdrop-blur-sm transition-opacity md:opacity-0 md:group-hover:opacity-100 hover:bg-white/80 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-80 disabled:hover:bg-white/50 dark:bg-white/10 dark:text-slate-300 dark:hover:bg-white/20 dark:hover:text-white dark:disabled:hover:bg-white/10"
+                    title={isDiscoveringProjectGitRepos
+                      ? 'Discovering repositories...'
+                      : hasMultipleGitRepos
+                          ? 'Select a repository'
+                          : 'Open Git Workspace'}
+                    disabled={isDiscoveringProjectGitRepos}
+                  >
+                    <GitBranchIcon className="h-3.5 w-3.5" />
+                  </button>
+                  {hasMultipleGitRepos && isGitRepoMenuOpen && (
+                    <div className="absolute right-0 top-8 z-30 max-h-56 w-52 overflow-auto rounded-lg border border-slate-200 bg-white p-1 shadow-xl dark:border-[#30363d] dark:bg-[#161b22]">
+                      {discoveredProjectGitRepos.map((repoPath) => {
+                        const relativeRepoPath = toProjectRelativeRepoPath(project, repoPath);
+                        return (
+                          <button
+                            key={repoPath}
+                            type="button"
+                            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-[#30363d]/70"
+                            title={repoPath}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setIsGitRepoMenuOpen(false);
+                              onOpenGitWorkspace(project, repoPath);
+                            }}
+                          >
+                            <span className="truncate">{relativeRepoPath}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
               <button
                 onClick={(event) => {
                   void onOpenProjectSettings(event, project);

@@ -14,6 +14,54 @@ const DB_PATH = path.join(VIBA_DIR, DB_FILE_NAME);
 
 let dbInstance: Database.Database | null = null;
 
+const SESSION_TABLE_COLUMN_SQL = `
+  session_name TEXT PRIMARY KEY,
+  project_path TEXT NOT NULL DEFAULT '',
+  workspace_path TEXT NOT NULL DEFAULT '',
+  workspace_mode TEXT NOT NULL DEFAULT 'folder',
+  active_repo_path TEXT,
+  repo_path TEXT,
+  worktree_path TEXT,
+  branch_name TEXT,
+  base_branch TEXT,
+  agent TEXT NOT NULL,
+  model TEXT NOT NULL,
+  reasoning_effort TEXT,
+  thread_id TEXT,
+  active_turn_id TEXT,
+  run_state TEXT,
+  last_error TEXT,
+  last_activity_at TEXT,
+  title TEXT,
+  dev_server_script TEXT,
+  initialized INTEGER,
+  timestamp TEXT NOT NULL
+`;
+
+const SESSION_TABLE_COLUMN_NAMES = [
+  'session_name',
+  'project_path',
+  'workspace_path',
+  'workspace_mode',
+  'active_repo_path',
+  'repo_path',
+  'worktree_path',
+  'branch_name',
+  'base_branch',
+  'agent',
+  'model',
+  'reasoning_effort',
+  'thread_id',
+  'active_turn_id',
+  'run_state',
+  'last_error',
+  'last_activity_at',
+  'title',
+  'dev_server_script',
+  'initialized',
+  'timestamp',
+] as const;
+
 function ensureVibaDir(): void {
   fs.mkdirSync(VIBA_DIR, { recursive: true });
 }
@@ -24,6 +72,15 @@ function secureDbFilePermissions(): void {
   } catch {
     // Ignore permission errors on platforms that do not support POSIX modes.
   }
+}
+
+function getSessionsTableSql(tableName = 'sessions', includeIfNotExists = true): string {
+  const ifNotExistsClause = includeIfNotExists ? ' IF NOT EXISTS' : '';
+  return `
+    CREATE TABLE${ifNotExistsClause} ${tableName} (
+      ${SESSION_TABLE_COLUMN_SQL}
+    );
+  `;
 }
 
 function createSchema(db: Database.Database): void {
@@ -136,29 +193,7 @@ function createSchema(db: Database.Database): void {
       keytar_account TEXT
     );
 
-    CREATE TABLE IF NOT EXISTS sessions (
-      session_name TEXT PRIMARY KEY,
-      project_path TEXT NOT NULL DEFAULT '',
-      workspace_path TEXT NOT NULL DEFAULT '',
-      workspace_mode TEXT NOT NULL DEFAULT 'folder',
-      active_repo_path TEXT,
-      repo_path TEXT,
-      worktree_path TEXT,
-      branch_name TEXT,
-      base_branch TEXT,
-      agent TEXT NOT NULL,
-      model TEXT NOT NULL,
-      reasoning_effort TEXT,
-      thread_id TEXT,
-      active_turn_id TEXT,
-      run_state TEXT,
-      last_error TEXT,
-      last_activity_at TEXT,
-      title TEXT,
-      dev_server_script TEXT,
-      initialized INTEGER,
-      timestamp TEXT NOT NULL
-    );
+    ${getSessionsTableSql()}
 
     CREATE TABLE IF NOT EXISTS session_git_repos (
       session_name TEXT NOT NULL,
@@ -738,6 +773,14 @@ function addColumnIfMissing(db: Database.Database, tableName: string, columnSql:
   db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnSql}`);
 }
 
+function getTableInfo(
+  db: Database.Database,
+  tableName: string,
+): Array<{ name: string; notnull: number }> {
+  if (!tableExists(db, tableName)) return [];
+  return db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string; notnull: number }>;
+}
+
 function createIndexIfColumnsExist(
   db: Database.Database,
   tableName: string,
@@ -764,6 +807,35 @@ function normalizeRelativePath(absolutePath: string, basePath: string | null): s
   if (!isPathWithin(basePath, absolutePath)) return '';
   const relativePath = path.relative(basePath, absolutePath);
   return relativePath === '.' ? '' : relativePath;
+}
+
+function rebuildSessionsTableIfLegacyBranchNameIsRequired(db: Database.Database): void {
+  if (!tableExists(db, 'sessions')) return;
+
+  const tableInfo = getTableInfo(db, 'sessions');
+  const branchNameColumn = tableInfo.find((column) => column.name === 'branch_name');
+  if (!branchNameColumn || branchNameColumn.notnull !== 1) return;
+
+  const existingColumns = new Set(tableInfo.map((column) => column.name));
+  const copyColumns = SESSION_TABLE_COLUMN_NAMES.filter((columnName) => existingColumns.has(columnName));
+  if (copyColumns.length === 0) return;
+
+  const migratedTableName = 'sessions__rebuilt';
+  const copyColumnSql = copyColumns.join(', ');
+
+  const migration = db.transaction(() => {
+    db.exec(`DROP TABLE IF EXISTS ${migratedTableName}`);
+    db.exec(getSessionsTableSql(migratedTableName, false));
+    db.exec(`
+      INSERT INTO ${migratedTableName} (${copyColumnSql})
+      SELECT ${copyColumnSql}
+      FROM sessions
+    `);
+    db.exec('DROP TABLE sessions');
+    db.exec(`ALTER TABLE ${migratedTableName} RENAME TO sessions`);
+  });
+
+  migration();
 }
 
 function runSchemaMigrations(db: Database.Database): void {
@@ -793,6 +865,8 @@ function runSchemaMigrations(db: Database.Database): void {
   addColumnIfMissing(db, 'drafts', 'git_contexts_json TEXT');
   addColumnIfMissing(db, 'drafts', 'reasoning_effort TEXT');
   addColumnIfMissing(db, 'app_config_project_settings', 'agent_reasoning_effort TEXT');
+
+  rebuildSessionsTableIfLegacyBranchNameIsRequired(db);
 
   if (tableExists(db, 'repositories') && getRowCount(db, 'projects') === 0) {
     db.prepare(`

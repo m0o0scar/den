@@ -31,7 +31,7 @@ after(async () => {
 });
 
 describe('local DB session workspace preparation schema', () => {
-  it('preserves local_source workspace mode during session migration', async () => {
+  it('rebuilds legacy sessions schema to allow folder-mode sessions without branch names', async () => {
     const dbPath = localDbModule.getLocalDbPath();
     await mkdir(path.dirname(dbPath), { recursive: true });
 
@@ -45,7 +45,7 @@ describe('local DB session workspace preparation schema', () => {
         active_repo_path TEXT,
         repo_path TEXT,
         worktree_path TEXT,
-        branch_name TEXT,
+        branch_name TEXT NOT NULL,
         base_branch TEXT,
         agent TEXT NOT NULL,
         model TEXT NOT NULL,
@@ -61,6 +61,30 @@ describe('local DB session workspace preparation schema', () => {
         timestamp TEXT NOT NULL
       );
     `);
+    seededDb.prepare(`
+      INSERT INTO sessions (
+        session_name, project_path, workspace_path, workspace_mode, active_repo_path,
+        repo_path, worktree_path, branch_name, base_branch,
+        agent, model, timestamp
+      ) VALUES (
+        @sessionName, @projectPath, @workspacePath, @workspaceMode, @activeRepoPath,
+        @repoPath, @worktreePath, @branchName, @baseBranch,
+        @agent, @model, @timestamp
+      )
+    `).run({
+      sessionName: 'legacy-git-session',
+      projectPath: '/tmp/project',
+      workspacePath: '/tmp/project/.viba/projects/legacy-git-session/workspace',
+      workspaceMode: 'single_worktree',
+      activeRepoPath: '/tmp/project',
+      repoPath: '/tmp/project',
+      worktreePath: '/tmp/project/.viba/projects/legacy-git-session/workspace',
+      branchName: 'codex/legacy-git-session',
+      baseBranch: 'main',
+      agent: 'codex',
+      model: 'gpt-5',
+      timestamp: new Date().toISOString(),
+    });
     seededDb.prepare(`
       INSERT INTO sessions (
         session_name, project_path, workspace_path, workspace_mode, active_repo_path,
@@ -88,7 +112,57 @@ describe('local DB session workspace preparation schema', () => {
     seededDb.close();
 
     const db = localDbModule.getLocalDb();
-    const row = db.prepare(`
+    const columns = db.prepare('PRAGMA table_info(sessions)').all() as Array<{
+      name: string;
+      notnull: number;
+    }>;
+    const branchNameColumn = columns.find((column) => column.name === 'branch_name');
+
+    assert.ok(branchNameColumn);
+    assert.equal(branchNameColumn.notnull, 0);
+
+    assert.doesNotThrow(() => {
+      db.prepare(`
+        INSERT INTO sessions (
+          session_name, project_path, workspace_path, workspace_mode, active_repo_path,
+          repo_path, worktree_path, branch_name, base_branch,
+          agent, model, timestamp
+        ) VALUES (
+          @sessionName, @projectPath, @workspacePath, @workspaceMode, @activeRepoPath,
+          @repoPath, @worktreePath, @branchName, @baseBranch,
+          @agent, @model, @timestamp
+        )
+      `).run({
+        sessionName: 'folder-session',
+        projectPath: '/tmp/non-git-project',
+        workspacePath: '/tmp/non-git-project',
+        workspaceMode: 'folder',
+        activeRepoPath: null,
+        repoPath: '/tmp/non-git-project',
+        worktreePath: '/tmp/non-git-project',
+        branchName: null,
+        baseBranch: null,
+        agent: 'codex',
+        model: 'gpt-5',
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    const gitBackedRow = db.prepare(`
+      SELECT branch_name, base_branch, workspace_mode
+      FROM sessions
+      WHERE session_name = ?
+    `).get('legacy-git-session') as {
+      branch_name: string;
+      base_branch: string | null;
+      workspace_mode: string;
+    };
+
+    assert.equal(gitBackedRow.branch_name, 'codex/legacy-git-session');
+    assert.equal(gitBackedRow.base_branch, 'main');
+    assert.equal(gitBackedRow.workspace_mode, 'single_worktree');
+
+    const localSourceRow = db.prepare(`
       SELECT workspace_mode, workspace_path, project_path, active_repo_path
       FROM sessions
       WHERE session_name = ?
@@ -99,10 +173,22 @@ describe('local DB session workspace preparation schema', () => {
       active_repo_path: string | null;
     };
 
-    assert.equal(row.workspace_mode, 'local_source');
-    assert.equal(row.workspace_path, '/tmp/project');
-    assert.equal(row.project_path, '/tmp/project');
-    assert.equal(row.active_repo_path, '/tmp/project');
+    assert.equal(localSourceRow.workspace_mode, 'local_source');
+    assert.equal(localSourceRow.workspace_path, '/tmp/project');
+    assert.equal(localSourceRow.project_path, '/tmp/project');
+    assert.equal(localSourceRow.active_repo_path, '/tmp/project');
+
+    const folderRow = db.prepare(`
+      SELECT branch_name, workspace_mode
+      FROM sessions
+      WHERE session_name = ?
+    `).get('folder-session') as {
+      branch_name: string | null;
+      workspace_mode: string;
+    };
+
+    assert.equal(folderRow.branch_name, null);
+    assert.equal(folderRow.workspace_mode, 'folder');
   });
 
   it('creates session_workspace_preparations with expected columns', () => {
