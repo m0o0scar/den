@@ -868,7 +868,7 @@ function runSchemaMigrations(db: Database.Database): void {
         project_path = COALESCE(NULLIF(project_path, ''), repo_path),
         workspace_path = COALESCE(NULLIF(workspace_path, ''), worktree_path, repo_path),
         workspace_mode = CASE
-          WHEN workspace_mode IN ('single_worktree', 'multi_repo_worktree', 'folder') THEN workspace_mode
+          WHEN workspace_mode IN ('single_worktree', 'multi_repo_worktree', 'folder', 'local_source') THEN workspace_mode
           WHEN COALESCE(repo_path, '') <> '' AND COALESCE(worktree_path, '') <> '' THEN 'single_worktree'
           ELSE 'folder'
         END,
