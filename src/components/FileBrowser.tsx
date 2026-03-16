@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { checkDirectoryAccessible, createDirectory, listDirectories, getHomeDirectory } from '@/app/actions/git';
 import { Folder, ArrowLeft, Check, FolderPlus } from 'lucide-react';
 import { getDirName } from '@/lib/path';
+import { useAppDialog } from '@/hooks/use-app-dialog';
 import { useDialogKeyboardShortcuts } from '@/hooks/useDialogKeyboardShortcuts';
 
 interface FileSystemItem {
@@ -28,6 +29,7 @@ export default function FileBrowser({ title, initialPath, onSelect, onCancel, ch
   const [loading, setLoading] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { prompt: promptDialog, dialog, isOpen: isAppDialogOpen } = useAppDialog();
 
   useEffect(() => {
     let isMounted = true;
@@ -128,6 +130,7 @@ export default function FileBrowser({ title, initialPath, onSelect, onCancel, ch
   }, [currentPath, handleSelectPath]);
 
   useDialogKeyboardShortcuts({
+    enabled: !isAppDialogOpen,
     onConfirm: handleSelect,
     onDismiss: onCancel,
     canConfirm: Boolean(currentPath) && !isCreatingFolder,
@@ -149,7 +152,14 @@ export default function FileBrowser({ title, initialPath, onSelect, onCancel, ch
   const handleCreateFolder = useCallback(async () => {
     if (!currentPath || isCreatingFolder) return;
 
-    const folderNameInput = window.prompt('New folder name');
+    const folderNameInput = await promptDialog({
+      title: 'Create folder',
+      description: `Create a new folder in:\n${currentPath}`,
+      inputLabel: 'Folder name',
+      placeholder: 'New folder name',
+      confirmLabel: 'Create',
+      requireNonEmpty: true,
+    });
     const folderName = folderNameInput?.trim() || '';
     if (!folderName) return;
 
@@ -171,11 +181,12 @@ export default function FileBrowser({ title, initialPath, onSelect, onCancel, ch
     } finally {
       setIsCreatingFolder(false);
     }
-  }, [currentPath, isCreatingFolder]);
+  }, [currentPath, isCreatingFolder, promptDialog]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-base-200 rounded-lg shadow-xl w-full max-w-3xl h-[80vh] flex flex-col">
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="bg-base-200 rounded-lg shadow-xl w-full max-w-3xl h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-base-300">
           <h2 className="text-xl font-bold flex items-center gap-2">
@@ -275,7 +286,9 @@ export default function FileBrowser({ title, initialPath, onSelect, onCancel, ch
         <div className="p-3 border-t border-base-300 text-xs text-base-content/50 text-center">
           Navigate to a folder, create one if needed, then click &quot;Select Current Folder&quot; to choose it.
         </div>
+        </div>
       </div>
-    </div>
+      {dialog}
+    </>
   );
 }
