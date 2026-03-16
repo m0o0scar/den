@@ -194,4 +194,9 @@ describe("nextConfig", () => {
     assert.ok(nextConfig.allowedDevOrigins.includes("*.ts.net"));
     assert.ok(nextConfig.experimental.serverActions.allowedOrigins.includes("*.ts.net"));
   });
+
+  it("allows Tailscale CGNAT IP hosts during development", () => {
+    assert.ok(nextConfig.allowedDevOrigins.includes("100.*"));
+    assert.ok(nextConfig.experimental.serverActions.allowedOrigins.includes("100.*"));
+  });
 });
