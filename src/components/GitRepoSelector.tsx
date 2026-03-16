@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { FolderGit2, Plus, X, ChevronRight, ChevronDown, Bot, Trash2, ExternalLink, CloudDownload, Monitor, Sun, Moon } from 'lucide-react';
+import { FolderGit2, Plus, X, ChevronRight, ChevronDown, Bot, Trash2, ExternalLink, CloudDownload, Monitor, Sun, Moon, Zap, FileText, HardDrive, Layers } from 'lucide-react';
 import FileBrowser from './FileBrowser';
 import {
   GitBranch,
@@ -3360,28 +3360,32 @@ export default function GitRepoSelector({
                       >
                         <button
                           type="button"
-                          className={`h-full px-3 text-[11px] font-semibold transition ${sessionMode === 'fast'
+                          className={`h-full px-2.5 text-[11px] font-semibold transition lg:px-3 ${sessionMode === 'fast'
                             ? 'bg-primary text-white'
                             : 'text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-[#161b22]'
                             }`}
                           onClick={() => handleSessionModeChange('fast')}
                           aria-pressed={sessionMode === 'fast'}
                           disabled={loading}
+                          title="Fast"
                         >
-                          Fast
+                          <Zap className="h-3.5 w-3.5 lg:hidden" />
+                          <span className="hidden lg:inline">Fast</span>
                         </button>
                         <div className="h-5 w-px bg-slate-200 dark:bg-[#30363d]" />
                         <button
                           type="button"
-                          className={`h-full px-3 text-[11px] font-semibold transition ${sessionMode === 'plan'
+                          className={`h-full px-2.5 text-[11px] font-semibold transition lg:px-3 ${sessionMode === 'plan'
                             ? 'bg-primary text-white'
                             : 'text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-[#161b22]'
                             }`}
                           onClick={() => handleSessionModeChange('plan')}
                           aria-pressed={sessionMode === 'plan'}
                           disabled={loading}
+                          title="Plan"
                         >
-                          Plan
+                          <FileText className="h-3.5 w-3.5 lg:hidden" />
+                          <span className="hidden lg:inline">Plan</span>
                         </button>
                       </div>
 
@@ -3392,28 +3396,32 @@ export default function GitRepoSelector({
                       >
                         <button
                           type="button"
-                          className={`h-full px-3 text-[11px] font-semibold transition ${sessionWorkspacePreference === 'local'
+                          className={`h-full px-2.5 text-[11px] font-semibold transition lg:px-3 ${sessionWorkspacePreference === 'local'
                             ? 'bg-primary text-white'
                             : 'text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-[#161b22]'
                             }`}
                           onClick={() => handleSessionWorkspacePreferenceChange('local')}
                           aria-pressed={sessionWorkspacePreference === 'local'}
                           disabled={loading}
+                          title="Local"
                         >
-                          Local
+                          <HardDrive className="h-3.5 w-3.5 lg:hidden" />
+                          <span className="hidden lg:inline">Local</span>
                         </button>
                         <div className="h-5 w-px bg-slate-200 dark:bg-[#30363d]" />
                         <button
                           type="button"
-                          className={`h-full px-3 text-[11px] font-semibold transition ${sessionWorkspacePreference === 'workspace'
+                          className={`h-full px-2.5 text-[11px] font-semibold transition lg:px-3 ${sessionWorkspacePreference === 'workspace'
                             ? 'bg-primary text-white'
                             : 'text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-[#161b22]'
                             }`}
                           onClick={() => handleSessionWorkspacePreferenceChange('workspace')}
                           aria-pressed={sessionWorkspacePreference === 'workspace'}
                           disabled={loading}
+                          title="Workspace"
                         >
-                          Workspace
+                          <Layers className="h-3.5 w-3.5 lg:hidden" />
+                          <span className="hidden lg:inline">Workspace</span>
                         </button>
                       </div>
 
