@@ -2,8 +2,7 @@ import type { AgentProvider, ModelOption, ReasoningEffort } from './types.ts';
 
 import { normalizeProviderReasoningEffort } from './agent/reasoning.ts';
 
-export const HOME_TASK_PROJECT_CONFIDENCE_THRESHOLD = 0.72;
-export const HOME_TASK_PROJECT_CONFIDENCE_DELTA_THRESHOLD = 0.12;
+export const HOME_TASK_PROJECT_CONFIDENCE_THRESHOLD = 0.8;
 
 export type HomeTaskProjectOption = {
   projectPath: string;
@@ -96,7 +95,8 @@ export function buildProjectRecommendationPrompt(input: {
   return [
     'Choose the best Palx project for this task.',
     'Only use the provided project list.',
-    'If multiple projects are plausible or confidence is not high, set needsUserChoice to true.',
+    'If the best project confidence is 0.80 or lower, set needsUserChoice to true.',
+    'If the best project confidence is greater than 0.80, set needsUserChoice to false.',
     'Return JSON only with this schema:',
     '{"selectedProjectPath":string|null,"needsUserChoice":boolean,"candidates":[{"projectPath":string,"confidence":number,"rationale":string}]}',
     '',
@@ -179,21 +179,13 @@ export function evaluateProjectRecommendation(input: {
     };
   }
 
-  const topConfidence = suggestedProjects[0]?.confidence ?? 0;
-  const secondConfidence = suggestedProjects[1]?.confidence ?? 0;
   const selectedConfidence = selectedProjectPath && suggestedProjectPaths.has(selectedProjectPath)
     ? (suggestedProjects.find((project) => project.projectPath === selectedProjectPath)?.confidence ?? 0)
     : 0;
 
   const isAmbiguous = (
-    input.recommendation.needsUserChoice
-    || !selectedProjectPath
-    || selectedConfidence < HOME_TASK_PROJECT_CONFIDENCE_THRESHOLD
-    || (
-      suggestedProjects.length > 1
-      && topConfidence < 0.9
-      && (topConfidence - secondConfidence) < HOME_TASK_PROJECT_CONFIDENCE_DELTA_THRESHOLD
-    )
+    !selectedProjectPath
+    || selectedConfidence <= HOME_TASK_PROJECT_CONFIDENCE_THRESHOLD
   );
 
   return {

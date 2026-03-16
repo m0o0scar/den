@@ -93,6 +93,35 @@ describe('home task recommendation helpers', () => {
     assert.equal(evaluated.suggestedProjects.length, 2);
   });
 
+  it('auto-selects when selected project confidence is above eighty percent', () => {
+    const parsed = parseProjectRecommendation(JSON.stringify({
+      selectedProjectPath: '/work/apps/alpha',
+      needsUserChoice: true,
+      candidates: [
+        {
+          projectPath: '/work/apps/alpha',
+          confidence: 0.81,
+          rationale: 'Alpha owns this task.',
+        },
+        {
+          projectPath: '/work/apps/beta',
+          confidence: 0.79,
+          rationale: 'Beta is plausible but weaker.',
+        },
+      ],
+    }));
+
+    assert.ok(parsed);
+
+    const evaluated = evaluateProjectRecommendation({
+      recommendation: parsed,
+      projects,
+    });
+
+    assert.equal(evaluated.needsUserChoice, false);
+    assert.equal(evaluated.selectedProjectPath, '/work/apps/alpha');
+  });
+
   it('falls back to supported runtime settings when recommendation output is partial', () => {
     const runtimeRecommendation = parseRuntimeRecommendation(JSON.stringify({
       model: 'gpt-5.4',

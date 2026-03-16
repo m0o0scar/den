@@ -198,6 +198,63 @@ describe('createHomeTaskInternal', () => {
     assert.strictEqual(createAndLaunchTaskSession.mock.callCount(), 0);
   });
 
+  it('auto-creates when confidence is above eighty percent even if the agent flags ambiguity', async () => {
+    const runAdHocAgentText = mock.fn(async ({ provider }: { provider: string }) => {
+      if (provider === 'codex') {
+        return {
+          threadId: 'thread-project',
+          assistantText: JSON.stringify({
+            selectedProjectPath: '/work/apps/alpha',
+            needsUserChoice: true,
+            candidates: [
+              {
+                projectPath: '/work/apps/alpha',
+                confidence: 0.81,
+                rationale: 'Alpha is still the strongest match.',
+              },
+              {
+                projectPath: '/work/apps/beta',
+                confidence: 0.79,
+                rationale: 'Beta is somewhat plausible.',
+              },
+            ],
+          }),
+        };
+      }
+
+      return {
+        threadId: 'thread-runtime',
+        assistantText: JSON.stringify({
+          model: 'gpt-5.4',
+          reasoningEffort: 'high',
+          rationale: 'Use the default Codex runtime.',
+        }),
+      };
+    });
+    const createAndLaunchTaskSession = mock.fn(async () => ({
+      success: true,
+      sessionName: 'session-789',
+    }));
+
+    const result = await createHomeTaskInternal({
+      description: 'Fix the Alpha onboarding flow.',
+      attachmentPaths: [],
+    }, {
+      getConfig: async () => createConfig(),
+      updateConfig: async (updates) => createConfig(updates),
+      getProjects: createProjects,
+      getDefaultAgentProvider: () => 'codex',
+      getAgentStatus: async (provider) => createStatus(provider),
+      runAdHocAgentText,
+      createAndLaunchTaskSession,
+      getRecommendationWorkspacePath: () => '/tmp',
+    });
+
+    assert.equal(result.status, 'created');
+    assert.strictEqual(runAdHocAgentText.mock.callCount(), 2);
+    assert.strictEqual(createAndLaunchTaskSession.mock.callCount(), 1);
+  });
+
   it('skips project analysis when the user provides a project choice', async () => {
     const runAdHocAgentText = mock.fn(async () => ({
       threadId: 'thread-runtime',
