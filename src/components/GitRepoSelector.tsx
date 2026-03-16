@@ -19,17 +19,16 @@ import {
   resolveProjectByName,
 } from '@/app/actions/project';
 import {
-  createSession,
   deleteSession,
   getSessionPrefillContext,
   listSessions,
   prepareSessionWorkspace,
   releasePreparedSessionWorkspace,
-  saveSessionLaunchContext,
   startPreparedSessionWorkspaceStartupCommand,
   type SessionCreateGitContextInput,
   SessionMetadata,
 } from '@/app/actions/session';
+import { createAndLaunchTaskSession } from '@/app/actions/task-session';
 import { deleteDraft, listDrafts, saveDraft, DraftMetadata } from '@/app/actions/draft';
 import { getConfig, updateConfig, updateProjectSettings, Config } from '@/app/actions/config';
 import { listCredentials } from '@/app/actions/credentials';
@@ -45,8 +44,13 @@ import {
   findActiveMention,
   replaceActiveMention,
 } from '@/lib/task-description-mentions';
-import { buildAgentStartupPrompt, hasStartupTaskDescription } from '@/lib/agent-startup-prompt';
+import { hasStartupTaskDescription } from '@/lib/agent-startup-prompt';
 import { normalizeProviderReasoningEffort } from '@/lib/agent/reasoning';
+import {
+  buildAttachmentContext,
+  normalizePathForComparison,
+  toProjectRelativeRepoPath,
+} from '@/lib/task-session';
 import {
   resolveShouldUseDarkTheme,
   THEME_MODE_STORAGE_KEY,
@@ -78,7 +82,6 @@ const HOME_REPO_DISCOVERY_MAX_AUTOSTART = 3;
 
 const SESSION_MODE_STORAGE_KEY = 'viba:new-session-mode';
 const AGENT_PROVIDER_MODEL_CACHE_STORAGE_KEY_PREFIX = 'viba:agent-provider-models:';
-const SESSION_TITLE_MAX_LENGTH = 120;
 const COMPACT_TASK_HEADER_THRESHOLD_PX = 1024;
 const STACKED_TASK_HEADER_THRESHOLD_PX = 960;
 const SUPPORTED_AGENT_PROVIDERS = ['codex', 'gemini', 'cursor'] as const;
@@ -126,35 +129,6 @@ type GitRepoSelectorProps = {
   showLogout?: boolean;
   logoutEnabled?: boolean;
 };
-
-function deriveSessionTitleFromTaskDescription(taskDescription: string): string | undefined {
-  const firstNonEmptyLine = taskDescription
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-
-  if (!firstNonEmptyLine) return undefined;
-  return firstNonEmptyLine.slice(0, SESSION_TITLE_MAX_LENGTH);
-}
-
-function normalizePathForComparison(pathValue: string): string {
-  return pathValue.replace(/\\/g, '/').replace(/\/+$/, '');
-}
-
-function toProjectRelativeRepoPath(projectPath: string, repoPath: string): string {
-  const normalizedProjectPath = normalizePathForComparison(projectPath);
-  const normalizedRepoPath = normalizePathForComparison(repoPath);
-
-  if (!normalizedProjectPath || !normalizedRepoPath) return repoPath;
-  if (normalizedRepoPath === normalizedProjectPath) return '.';
-
-  const projectPrefix = `${normalizedProjectPath}/`;
-  if (normalizedRepoPath.startsWith(projectPrefix)) {
-    return normalizedRepoPath.slice(projectPrefix.length);
-  }
-
-  return repoPath;
-}
 
 function arePathListsEqual(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;
@@ -2437,7 +2411,6 @@ export default function GitRepoSelector({
       setConfig(nextConfig);
 
       // 2. Create session workspace (single/multi/folder mode decided by server runtime discovery).
-      const derivedTitle = deriveSessionTitleFromTaskDescription(initialMessage);
       const gitContexts = selectedProjectGitContexts;
       const preparedWorkspaceId = (
         sessionWorkspacePreference === 'workspace'
@@ -2445,127 +2418,58 @@ export default function GitRepoSelector({
           ? activePreparedWorkspaceRef.current.preparationId
           : undefined
       );
+      const attachmentContext = buildAttachmentContext([
+        ...attachments,
+        ...prefilledAttachmentPaths,
+      ]);
+      const trimmedInitialMessage = initialMessage.trim();
+      const hasTaskDescription = hasStartupTaskDescription(trimmedInitialMessage);
+      const processedMessage = hasTaskDescription
+        ? trimmedInitialMessage.replace(/@(\S+)/g, (match, name) => {
+          const attachmentPath = attachmentContext.attachmentPathByName.get(name);
+          if (attachmentPath) {
+            return attachmentPath;
+          }
+          return name;
+        })
+        : '';
 
-      const wtResult = await createSession(selectedRepo, gitContexts, {
-        agent: resolvedProvider,
+      const sessionResult = await createAndLaunchTaskSession({
+        projectPath: selectedRepo,
+        taskDescription: processedMessage,
+        rawTaskDescription: hasTaskDescription ? trimmedInitialMessage : '',
+        attachmentPaths: attachmentContext.attachmentPaths,
         agentProvider: resolvedProvider,
         model: resolvedModel,
         reasoningEffort: resolvedReasoningEffort,
-        title: derivedTitle,
+        sessionMode,
+        workspacePreference: sessionWorkspacePreference,
         startupScript: startupScript || undefined,
         devServerScript: resolvedDevServerScript || undefined,
         preparedWorkspaceId,
-        workspacePreference: sessionWorkspacePreference,
+        gitContexts,
+        projectRepoPaths: projectGitRepos,
+        projectRepoRelativePaths: projectGitRepos.map((repoPath) => (
+          toProjectRelativeRepoPath(selectedRepo, repoPath)
+        )),
       });
 
-      if (wtResult.success && wtResult.sessionName && wtResult.workspacePath) {
-        if (preparedWorkspaceId) {
-          setPreparedWorkspaceState(null);
-          workspacePreparationInputKeyRef.current = null;
-          void releasePreparedWorkspaceById(preparedWorkspaceId);
-        }
-
-        const allAttachmentPaths = Array.from(
-          new Set(
-            [...attachments, ...prefilledAttachmentPaths]
-              .map((entry) => entry.trim())
-              .filter(Boolean)
-          )
-        );
-        const attachmentPathByName = new Map<string, string>();
-        for (const attachmentPath of allAttachmentPaths) {
-          const baseName = getBaseName(attachmentPath).trim();
-          if (!baseName) continue;
-          if (!attachmentPathByName.has(baseName)) {
-            attachmentPathByName.set(baseName, attachmentPath);
-          }
-        }
-        const allAttachmentNames = Array.from(attachmentPathByName.keys());
-
-        // Process initial message mentions
-        const trimmedInitialMessage = initialMessage.trim();
-        const hasTaskDescription = hasStartupTaskDescription(trimmedInitialMessage);
-        let processedMessage = trimmedInitialMessage;
-
-        if (hasTaskDescription) {
-          // Helper to match replacement
-          processedMessage = processedMessage.replace(/@(\S+)/g, (match, name) => {
-            const attachmentPath = attachmentPathByName.get(name);
-            if (attachmentPath) {
-              return attachmentPath;
-            }
-            // Assume repo file - keep relative path as we run in worktree root
-            return name;
-          });
-        }
-
-        const launchInitialMessage = hasTaskDescription ? processedMessage : '';
-
-        // 3. Persist launch context for the new session
-        const launchContextResult = await saveSessionLaunchContext(wtResult.sessionName, {
-          title: derivedTitle,
-          initialMessage: launchInitialMessage || undefined,
-          rawInitialMessage: hasTaskDescription ? trimmedInitialMessage : undefined,
-          startupScript: startupScript || undefined,
-          attachmentPaths: allAttachmentPaths,
-          attachmentNames: allAttachmentNames,
-          projectRepoPaths: projectGitRepos,
-          projectRepoRelativePaths: projectGitRepos.map((repoPath) => (
-            toProjectRelativeRepoPath(selectedRepo, repoPath)
-          )),
-          agentProvider: resolvedProvider,
-          model: resolvedModel,
-          reasoningEffort: resolvedReasoningEffort,
-          sessionMode,
-        });
-
-        if (!launchContextResult.success) {
-          setError(launchContextResult.error || 'Failed to save session context');
-          setLoading(false);
-          return;
-        }
-
-        const initialAgentPrompt = buildAgentStartupPrompt({
-          taskDescription: launchInitialMessage || undefined,
-          attachmentPaths: allAttachmentPaths,
-          sessionMode,
-          workspaceMode: wtResult.workspaceMode || 'folder',
-          gitRepos: wtResult.gitRepos,
-          discoveredRepoRelativePaths: projectGitRepos.map((repoPath) => toProjectRelativeRepoPath(selectedRepo, repoPath)),
-        });
-
-        if (initialAgentPrompt) {
-          const messageResponse = await fetch('/api/agent/message', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              sessionId: wtResult.sessionName,
-              message: initialAgentPrompt,
-              displayMessage: initialAgentPrompt,
-              markInitialized: true,
-            }),
-          });
-          const messagePayload = await messageResponse.json().catch(() => null) as { error?: string } | null;
-          if (!messageResponse.ok) {
-            setError(messagePayload?.error || 'Failed to queue initial agent turn');
-            notifySessionsChanged();
-            setLoading(false);
-            return;
-          }
-        }
-
-        // 4. Navigate to session page by path only
+      if (!sessionResult.success || !sessionResult.sessionName) {
+        setError(sessionResult.error || 'Failed to start session');
         notifySessionsChanged();
-        navigateToSession(wtResult.sessionName, { fresh: true });
-        return;
-
-        // No need to refresh sessions as we are navigating away
-      } else {
-        setError(wtResult.error || "Failed to create session workspace");
         setLoading(false);
+        return;
       }
+
+      if (preparedWorkspaceId) {
+        setPreparedWorkspaceState(null);
+        workspacePreparationInputKeyRef.current = null;
+        void releasePreparedWorkspaceById(preparedWorkspaceId);
+      }
+
+      notifySessionsChanged();
+      navigateToSession(sessionResult.sessionName, { fresh: true });
+      return;
 
     } catch (e) {
       console.error(e);
@@ -3044,6 +2948,13 @@ export default function GitRepoSelector({
           onRepoCardMouseMove={handleRepoCardMouseMove}
           onRepoCardMouseLeave={handleRepoCardMouseLeave}
           onAddProject={openCloneRemoteDialog}
+          onCreateTask={() => {
+            if (recentProjects[0]) {
+              router.push(`/new?project=${encodeURIComponent(recentProjects[0])}`);
+              return;
+            }
+            openCloneRemoteDialog();
+          }}
         />
       )}
 

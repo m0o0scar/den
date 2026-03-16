@@ -15,8 +15,10 @@ import { getConfig, updateConfig, updateProjectSettings, type Config } from '@/a
 import { listCredentials } from '@/app/actions/credentials';
 import { listDrafts, type DraftMetadata } from '@/app/actions/draft';
 import { resolveRepoCardIcon } from '@/app/actions/git';
+import { createHomeTask, type CreateHomeTaskResult } from '@/app/actions/home-task';
 import { cloneRemoteProject, discoverProjectGitRepos } from '@/app/actions/project';
 import { listSessions, type SessionMetadata } from '@/app/actions/session';
+import { toast } from '@/hooks/use-toast';
 import { useDialogKeyboardShortcuts } from '@/hooks/useDialogKeyboardShortcuts';
 import type { Credential } from '@/lib/credentials';
 import { getBaseName } from '@/lib/path';
@@ -27,9 +29,13 @@ import {
   THEME_REFRESH_EVENT,
 } from '@/lib/ttyd-theme';
 import { HomeDashboard } from './git-repo-selector/HomeDashboard';
+import { HomeNewTaskDialog } from './HomeNewTaskDialog';
 import type { RepoCredentialSelection } from './git-repo-selector/types';
+import type { Project } from '@/lib/types';
+import type { HomeTaskSuggestedProject } from '@/lib/home-task';
 
 const FileBrowser = dynamic(() => import('./FileBrowser'));
+const SessionFileBrowser = dynamic(() => import('./SessionFileBrowser'));
 const RepoSettingsDialog = dynamic(() =>
   import('./git-repo-selector/RepoSettingsDialog').then((module) => module.RepoSettingsDialog),
 );
@@ -107,6 +113,18 @@ export default function HomeDashboardContainer({
     projectPath: string;
     repos: string[];
   } | null>(null);
+  const [registeredProjects, setRegisteredProjects] = useState<Project[]>([]);
+  const [isLoadingRegisteredProjects, setIsLoadingRegisteredProjects] = useState(false);
+  const [isHomeNewTaskDialogOpen, setIsHomeNewTaskDialogOpen] = useState(false);
+  const [homeNewTaskDescription, setHomeNewTaskDescription] = useState('');
+  const [homeNewTaskAttachmentPaths, setHomeNewTaskAttachmentPaths] = useState<string[]>([]);
+  const [homeNewTaskError, setHomeNewTaskError] = useState<string | null>(null);
+  const [homeNewTaskSuggestedProjects, setHomeNewTaskSuggestedProjects] = useState<HomeTaskSuggestedProject[]>([]);
+  const [homeNewTaskSelectedProjectPath, setHomeNewTaskSelectedProjectPath] = useState('');
+  const [homeNewTaskSubmissionStage, setHomeNewTaskSubmissionStage] = useState<'idle' | 'analyzing' | 'creating'>('idle');
+  const [isSubmittingHomeNewTask, setIsSubmittingHomeNewTask] = useState(false);
+  const [isHomeNewTaskAttachmentBrowserOpen, setIsHomeNewTaskAttachmentBrowserOpen] = useState(false);
+  const [lastHomeNewTaskAttachmentBrowserPath, setLastHomeNewTaskAttachmentBrowserPath] = useState<string | undefined>(undefined);
   const [projectPendingDelete, setProjectPendingDelete] = useState<string | null>(null);
   const [deleteProjectLocalFolder, setDeleteProjectLocalFolder] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
@@ -122,6 +140,53 @@ export default function HomeDashboardContainer({
       console.error('Failed to refresh home activity:', refreshError);
     }
   }, []);
+
+  const refreshHomeConfig = useCallback(async () => {
+    try {
+      const nextConfig = await getConfig();
+      setConfig(nextConfig);
+    } catch (refreshError) {
+      console.error('Failed to refresh home config:', refreshError);
+    }
+  }, []);
+
+  const loadRegisteredProjects = useCallback(async () => {
+    setIsLoadingRegisteredProjects(true);
+    try {
+      const response = await fetch('/api/projects', {
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => null) as Project[] | { error?: string } | null;
+      if (!response.ok || !Array.isArray(payload)) {
+        throw new Error(
+          payload && !Array.isArray(payload) && typeof payload.error === 'string'
+            ? payload.error
+            : 'Failed to load registered projects.',
+        );
+      }
+      setRegisteredProjects(payload);
+    } catch (loadError) {
+      console.error('Failed to load registered projects:', loadError);
+      setRegisteredProjects([]);
+      setHomeNewTaskError(
+        loadError instanceof Error ? loadError.message : 'Failed to load registered projects.',
+      );
+    } finally {
+      setIsLoadingRegisteredProjects(false);
+    }
+  }, []);
+
+  const getProjectDisplayName = useCallback((projectPath: string): string => {
+    const alias = config?.projectSettings?.[projectPath]?.alias?.trim();
+    if (alias) {
+      return alias;
+    }
+
+    const registeredProject = registeredProjects.find((project) => project.path === projectPath);
+    return registeredProject?.displayName?.trim()
+      || registeredProject?.name?.trim()
+      || getBaseName(projectPath);
+  }, [config?.projectSettings, registeredProjects]);
 
   useEffect(() => {
     let cancelled = false;
@@ -463,6 +528,129 @@ export default function HomeDashboardContainer({
     setIsLoadingCloneCredentialOptions(false);
   }, [isCloningRemote]);
 
+  const resetHomeNewTaskProjectChoice = useCallback(() => {
+    setHomeNewTaskSuggestedProjects([]);
+    setHomeNewTaskSelectedProjectPath('');
+  }, []);
+
+  const resetHomeNewTaskDialogState = useCallback(() => {
+    setHomeNewTaskDescription('');
+    setHomeNewTaskAttachmentPaths([]);
+    setHomeNewTaskError(null);
+    setHomeNewTaskSuggestedProjects([]);
+    setHomeNewTaskSelectedProjectPath('');
+    setHomeNewTaskSubmissionStage('idle');
+    setIsSubmittingHomeNewTask(false);
+    setIsHomeNewTaskAttachmentBrowserOpen(false);
+  }, []);
+
+  const openHomeNewTaskDialog = useCallback(() => {
+    resetHomeNewTaskDialogState();
+    setIsHomeNewTaskDialogOpen(true);
+    void loadRegisteredProjects();
+  }, [loadRegisteredProjects, resetHomeNewTaskDialogState]);
+
+  const dismissHomeNewTaskDialog = useCallback(() => {
+    if (isSubmittingHomeNewTask) return;
+    setIsHomeNewTaskDialogOpen(false);
+    resetHomeNewTaskDialogState();
+  }, [isSubmittingHomeNewTask, resetHomeNewTaskDialogState]);
+
+  const handleHomeNewTaskDescriptionChange = useCallback((value: string) => {
+    setHomeNewTaskDescription(value);
+    setHomeNewTaskError(null);
+    resetHomeNewTaskProjectChoice();
+  }, [resetHomeNewTaskProjectChoice]);
+
+  const appendHomeNewTaskAttachments = useCallback((incomingPaths: string[]) => {
+    if (incomingPaths.length === 0) return;
+
+    setHomeNewTaskAttachmentPaths((previous) => {
+      const normalized = incomingPaths.map((entry) => entry.trim()).filter(Boolean);
+      return Array.from(new Set([...previous, ...normalized]));
+    });
+    setHomeNewTaskError(null);
+    resetHomeNewTaskProjectChoice();
+  }, [resetHomeNewTaskProjectChoice]);
+
+  const handleRemoveHomeNewTaskAttachment = useCallback((attachmentPath: string) => {
+    setHomeNewTaskAttachmentPaths((previous) => (
+      previous.filter((entry) => entry !== attachmentPath)
+    ));
+    setHomeNewTaskError(null);
+    resetHomeNewTaskProjectChoice();
+  }, [resetHomeNewTaskProjectChoice]);
+
+  const handleSubmitHomeNewTask = useCallback(async () => {
+    const trimmedDescription = homeNewTaskDescription.trim();
+    if (!trimmedDescription) {
+      setHomeNewTaskError('Task description is required.');
+      return;
+    }
+
+    if (homeNewTaskSuggestedProjects.length > 0 && !homeNewTaskSelectedProjectPath.trim()) {
+      setHomeNewTaskError('Select a project before creating the task.');
+      return;
+    }
+
+    setIsSubmittingHomeNewTask(true);
+    setHomeNewTaskError(null);
+    setHomeNewTaskSubmissionStage(
+      homeNewTaskSuggestedProjects.length > 0 ? 'creating' : 'analyzing',
+    );
+
+    try {
+      const result: CreateHomeTaskResult = await createHomeTask({
+        description: trimmedDescription,
+        attachmentPaths: homeNewTaskAttachmentPaths,
+        selectedProjectPath: homeNewTaskSuggestedProjects.length > 0
+          ? homeNewTaskSelectedProjectPath.trim() || undefined
+          : undefined,
+      });
+
+      if (result.status === 'needs_project_choice') {
+        setHomeNewTaskSuggestedProjects(result.suggestedProjects);
+        setHomeNewTaskSelectedProjectPath(
+          result.suggestedProjects[0]?.projectPath ?? '',
+        );
+        setHomeNewTaskSubmissionStage('idle');
+        return;
+      }
+
+      if (result.status === 'error') {
+        setHomeNewTaskError(result.error);
+        setHomeNewTaskSubmissionStage('idle');
+        return;
+      }
+
+      toast({
+        type: 'success',
+        title: 'Task created',
+        description: `${result.title || result.sessionName} • ${getProjectDisplayName(result.projectPath)}`,
+      });
+      setIsHomeNewTaskDialogOpen(false);
+      resetHomeNewTaskDialogState();
+      await Promise.all([refreshActivity(), refreshHomeConfig()]);
+    } catch (submitError) {
+      console.error('Failed to create home task:', submitError);
+      setHomeNewTaskError(
+        submitError instanceof Error ? submitError.message : 'Failed to create task.',
+      );
+      setHomeNewTaskSubmissionStage('idle');
+    } finally {
+      setIsSubmittingHomeNewTask(false);
+    }
+  }, [
+    getProjectDisplayName,
+    homeNewTaskAttachmentPaths,
+    homeNewTaskDescription,
+    homeNewTaskSelectedProjectPath,
+    homeNewTaskSuggestedProjects.length,
+    refreshActivity,
+    refreshHomeConfig,
+    resetHomeNewTaskDialogState,
+  ]);
+
   const dismissDeleteProjectDialog = useCallback(() => {
     if (isDeletingProject) return;
     setProjectPendingDelete(null);
@@ -771,6 +959,18 @@ export default function HomeDashboardContainer({
     canConfirm: !isDeletingProject,
   });
 
+  useDialogKeyboardShortcuts({
+    enabled: isHomeNewTaskDialogOpen && !isHomeNewTaskAttachmentBrowserOpen,
+    onConfirm: handleSubmitHomeNewTask,
+    onDismiss: dismissHomeNewTaskDialog,
+    canConfirm: !isSubmittingHomeNewTask
+      && homeNewTaskDescription.trim().length > 0
+      && (
+        homeNewTaskSuggestedProjects.length === 0
+        || homeNewTaskSelectedProjectPath.trim().length > 0
+      ),
+  });
+
   const runningSessionCountByProject = useMemo(() => {
     const counts = new Map<string, number>();
     for (const session of allSessions) {
@@ -793,11 +993,6 @@ export default function HomeDashboardContainer({
 
   const recentProjects = useMemo(() => config?.recentProjects ?? [], [config?.recentProjects]);
 
-  const getProjectDisplayName = useCallback((projectPath: string): string => {
-    const alias = config?.projectSettings?.[projectPath]?.alias?.trim();
-    return alias || getBaseName(projectPath);
-  }, [config?.projectSettings]);
-
   const filteredRecentProjects = useMemo(() => {
     const normalizedQuery = homeSearchQuery.trim().toLowerCase();
     if (!normalizedQuery) return recentProjects;
@@ -810,6 +1005,31 @@ export default function HomeDashboardContainer({
       );
     });
   }, [getProjectDisplayName, homeSearchQuery, recentProjects]);
+
+  const homeNewTaskProjectChoices = useMemo(() => {
+    const recentRankByPath = new Map(
+      recentProjects.map((projectPath, index) => [projectPath, index] as const),
+    );
+
+    return [...registeredProjects]
+      .sort((left, right) => {
+        const leftRank = recentRankByPath.get(left.path);
+        const rightRank = recentRankByPath.get(right.path);
+        if (leftRank !== undefined && rightRank !== undefined) {
+          if (leftRank !== rightRank) return leftRank - rightRank;
+        } else if (leftRank !== undefined) {
+          return -1;
+        } else if (rightRank !== undefined) {
+          return 1;
+        }
+
+        return getProjectDisplayName(left.path).localeCompare(getProjectDisplayName(right.path));
+      })
+      .map((project) => ({
+        projectPath: project.path,
+        displayLabel: getProjectDisplayName(project.path),
+      }));
+  }, [getProjectDisplayName, recentProjects, registeredProjects]);
 
   const currentThemeModeIndex = THEME_MODE_SEQUENCE.indexOf(themeMode);
   const nextThemeMode =
@@ -918,6 +1138,31 @@ export default function HomeDashboardContainer({
         onRepoCardMouseMove={handleRepoCardMouseMove}
         onRepoCardMouseLeave={handleRepoCardMouseLeave}
         onAddProject={openCloneRemoteDialog}
+        onCreateTask={openHomeNewTaskDialog}
+      />
+
+      <HomeNewTaskDialog
+        isOpen={isHomeNewTaskDialogOpen}
+        description={homeNewTaskDescription}
+        attachmentPaths={homeNewTaskAttachmentPaths}
+        error={homeNewTaskError}
+        isLoadingProjects={isLoadingRegisteredProjects}
+        isSubmitting={isSubmittingHomeNewTask}
+        submissionStage={homeNewTaskSubmissionStage}
+        suggestedProjects={homeNewTaskSuggestedProjects}
+        projectChoices={homeNewTaskProjectChoices}
+        selectedProjectPath={homeNewTaskSelectedProjectPath}
+        onDescriptionChange={handleHomeNewTaskDescriptionChange}
+        onSelectProjectPath={(projectPath) => {
+          setHomeNewTaskSelectedProjectPath(projectPath);
+          setHomeNewTaskError(null);
+        }}
+        onOpenAttachmentBrowser={() => setIsHomeNewTaskAttachmentBrowserOpen(true)}
+        onRemoveAttachment={handleRemoveHomeNewTaskAttachment}
+        onClose={dismissHomeNewTaskDialog}
+        onSubmit={() => {
+          void handleSubmitHomeNewTask();
+        }}
       />
 
       <RepoSettingsDialog
@@ -1088,6 +1333,18 @@ export default function HomeDashboardContainer({
           initialPath={config?.defaultRoot || undefined}
           onSelect={handleSetDefaultRoot}
           onCancel={() => setIsSelectingRoot(false)}
+        />
+      )}
+
+      {isHomeNewTaskDialogOpen && isHomeNewTaskAttachmentBrowserOpen && (
+        <SessionFileBrowser
+          initialPath={lastHomeNewTaskAttachmentBrowserPath || config?.defaultRoot || undefined}
+          onPathChange={setLastHomeNewTaskAttachmentBrowserPath}
+          onConfirm={async (paths) => {
+            appendHomeNewTaskAttachments(paths);
+            setIsHomeNewTaskAttachmentBrowserOpen(false);
+          }}
+          onCancel={() => setIsHomeNewTaskAttachmentBrowserOpen(false)}
         />
       )}
     </>

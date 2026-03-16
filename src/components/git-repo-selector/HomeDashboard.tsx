@@ -32,6 +32,7 @@ export type HomeDashboardProps = {
   onRepoCardMouseMove: (event: MouseEvent<HTMLDivElement>) => void;
   onRepoCardMouseLeave: (event: MouseEvent<HTMLDivElement>) => void;
   onAddProject: () => void;
+  onCreateTask: () => void;
 };
 
 export function HomeDashboard({
@@ -63,6 +64,7 @@ export function HomeDashboard({
   onRepoCardMouseMove,
   onRepoCardMouseLeave,
   onAddProject,
+  onCreateTask,
 }: HomeDashboardProps) {
   return (
     <div className="w-full max-w-7xl">
@@ -88,6 +90,13 @@ export function HomeDashboard({
               onChange={(event) => onHomeSearchQueryChange(event.target.value)}
             />
           </label>
+          <button
+            className="btn btn-primary btn-sm shrink-0 gap-2"
+            onClick={onCreateTask}
+          >
+            <Plus className="h-4 w-4" />
+            <span className="hidden whitespace-nowrap md:inline">New Task</span>
+          </button>
           <button
             className="btn btn-ghost btn-sm shrink-0 gap-2 px-2 lg:px-3 text-slate-700 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
             onClick={onOpenCredentials}
