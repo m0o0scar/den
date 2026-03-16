@@ -1,10 +1,12 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 const RUNTIME_COPY_RULES = new Map([
   ["better-sqlite3", ["package.json", "lib", path.join("build", "Release")]],
   ["keytar", ["package.json", "lib", path.join("build", "Release")]],
 ]);
+const require = createRequire(import.meta.url);
 
 function copyIntoShim(sourceRoot, targetRoot, relativePath) {
   const sourcePath = path.join(sourceRoot, relativePath);
@@ -72,10 +74,18 @@ function collectShimEntries({ appRoot, sourceDir, targetDir }) {
     .filter(Boolean);
 }
 
+function resolveInstalledPackageRoot(packageName, appRoot) {
+  try {
+    const packageJsonPath = require.resolve(`${packageName}/package.json`, { paths: [appRoot] });
+    return fs.realpathSync(path.dirname(packageJsonPath));
+  } catch {
+    return null;
+  }
+}
+
 export function syncNextNativeShims(appRoot) {
   const sourceDir = path.join(appRoot, ".next", "node_modules");
   const targetDir = path.join(appRoot, ".next", "server", "chunks", "node_modules");
-  const installedModulesDir = path.join(appRoot, "node_modules");
   const shimEntries = collectShimEntries({ appRoot, sourceDir, targetDir });
 
   if (shimEntries.length === 0) {
@@ -90,10 +100,8 @@ export function syncNextNativeShims(appRoot) {
       continue;
     }
 
-    const installedPackageRoot = path.join(installedModulesDir, shimEntry.packageName);
-    const sourcePackageRoot = fs.existsSync(installedPackageRoot)
-      ? fs.realpathSync(installedPackageRoot)
-      : shimEntry.fallbackSourceRoot;
+    const sourcePackageRoot =
+      resolveInstalledPackageRoot(shimEntry.packageName, appRoot) ?? shimEntry.fallbackSourceRoot;
     const targetPackageRoot = path.join(targetDir, shimEntry.entryName);
 
     for (const runtimePath of runtimePaths) {

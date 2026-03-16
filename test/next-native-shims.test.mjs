@@ -26,7 +26,8 @@ afterEach(() => {
 
 describe("syncNextNativeShims", () => {
   it("replaces traced native binaries with the installed package runtime files", () => {
-    const appRoot = makeTempDir();
+    const tempRoot = makeTempDir();
+    const appRoot = path.join(tempRoot, "package");
     const tracedPackageRoot = path.join(
       appRoot,
       ".next",
@@ -35,8 +36,9 @@ describe("syncNextNativeShims", () => {
       "node_modules",
       "better-sqlite3-deadbeef",
     );
-    const installedPackageRoot = path.join(appRoot, "node_modules", "better-sqlite3");
+    const installedPackageRoot = path.join(tempRoot, "node_modules", "better-sqlite3");
 
+    writeFile(path.join(appRoot, "package.json"), JSON.stringify({ name: "vibe-pal" }));
     writeFile(path.join(tracedPackageRoot, "package.json"), JSON.stringify({ name: "better-sqlite3" }));
     writeFile(
       path.join(tracedPackageRoot, "build", "Release", "better_sqlite3.node"),
@@ -62,7 +64,8 @@ describe("syncNextNativeShims", () => {
   });
 
   it("creates shim directories from .next/node_modules during postbuild sync", () => {
-    const appRoot = makeTempDir();
+    const tempRoot = makeTempDir();
+    const appRoot = path.join(tempRoot, "package");
     const sourcePackageRoot = path.join(appRoot, ".next", "node_modules", "keytar-deadbeef");
     const targetPackageRoot = path.join(
       appRoot,
@@ -72,8 +75,9 @@ describe("syncNextNativeShims", () => {
       "node_modules",
       "keytar-deadbeef",
     );
-    const installedPackageRoot = path.join(appRoot, "node_modules", "keytar");
+    const installedPackageRoot = path.join(tempRoot, "node_modules", "keytar");
 
+    writeFile(path.join(appRoot, "package.json"), JSON.stringify({ name: "vibe-pal" }));
     writeFile(path.join(sourcePackageRoot, "package.json"), JSON.stringify({ name: "keytar" }));
     writeFile(path.join(installedPackageRoot, "package.json"), JSON.stringify({ name: "keytar" }));
     writeFile(path.join(installedPackageRoot, "lib", "keytar.js"), "export default {};");
