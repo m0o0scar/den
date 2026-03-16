@@ -78,6 +78,7 @@ const HOME_REPO_DISCOVERY_MAX_AUTOSTART = 3;
 const SESSION_MODE_STORAGE_KEY = 'viba:new-session-mode';
 const AGENT_PROVIDER_MODEL_CACHE_STORAGE_KEY_PREFIX = 'viba:agent-provider-models:';
 const SESSION_TITLE_MAX_LENGTH = 120;
+const COMPACT_TASK_HEADER_THRESHOLD_PX = 1024;
 const SUPPORTED_AGENT_PROVIDERS = ['codex', 'gemini', 'cursor'] as const;
 const AGENT_PROVIDER_FALLBACK_LABELS: Record<string, string> = {
   codex: 'Codex CLI',
@@ -407,6 +408,7 @@ export default function GitRepoSelector({
   const [agentSetupMessage, setAgentSetupMessage] = useState<string | null>(null);
   const [isWaitingForLogin, setIsWaitingForLogin] = useState(false);
   const [waitingForLoginProvider, setWaitingForLoginProvider] = useState<AgentProvider | null>(null);
+  const [isCompactTaskHeader, setIsCompactTaskHeader] = useState(false);
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
   const [repoSettingsError, setRepoSettingsError] = useState<string | null>(null);
   const [isUploadingProjectIcon, setIsUploadingProjectIcon] = useState(false);
@@ -438,6 +440,7 @@ export default function GitRepoSelector({
   const latestSelectedRepoRef = useRef<string | null>(null);
   const latestTaskDescriptionRef = useRef('');
   const latestCursorPositionRef = useRef(0);
+  const taskDescriptionPanelRef = useRef<HTMLDivElement | null>(null);
 
   const collapsedSessionSetupLabel = 'Show Session Setup';
 
@@ -1096,6 +1099,36 @@ export default function GitRepoSelector({
   useEffect(() => {
     latestTaskDescriptionRef.current = initialMessage;
   }, [initialMessage]);
+
+  useEffect(() => {
+    const panelElement = taskDescriptionPanelRef.current;
+    if (!panelElement) return;
+
+    const updateCompactState = () => {
+      const nextIsCompact = panelElement.getBoundingClientRect().width < COMPACT_TASK_HEADER_THRESHOLD_PX;
+      setIsCompactTaskHeader((previous) => (
+        previous === nextIsCompact ? previous : nextIsCompact
+      ));
+    };
+
+    updateCompactState();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateCompactState);
+      return () => {
+        window.removeEventListener('resize', updateCompactState);
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateCompactState();
+    });
+    observer.observe(panelElement);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     if (mode !== 'new') return;
@@ -3345,7 +3378,10 @@ export default function GitRepoSelector({
             </div>
 
             <div className="self-start lg:col-span-9">
-              <div className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-[#30363d] dark:bg-[#161b22] dark:shadow-[0_16px_36px_-24px_rgba(2,6,23,0.95)]">
+              <div
+                ref={taskDescriptionPanelRef}
+                className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-[#30363d] dark:bg-[#161b22] dark:shadow-[0_16px_36px_-24px_rgba(2,6,23,0.95)]"
+              >
                 <div className="mb-4 space-y-3">
                   <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                     <label className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white" htmlFor="task-description">
@@ -3369,8 +3405,11 @@ export default function GitRepoSelector({
                           disabled={loading}
                           title="Fast"
                         >
-                          <Zap className="h-3.5 w-3.5 lg:hidden" />
-                          <span className="hidden lg:inline">Fast</span>
+                          {isCompactTaskHeader ? (
+                            <Zap className="h-3.5 w-3.5" />
+                          ) : (
+                            <span>Fast</span>
+                          )}
                         </button>
                         <div className="h-5 w-px bg-slate-200 dark:bg-[#30363d]" />
                         <button
@@ -3384,8 +3423,11 @@ export default function GitRepoSelector({
                           disabled={loading}
                           title="Plan"
                         >
-                          <FileText className="h-3.5 w-3.5 lg:hidden" />
-                          <span className="hidden lg:inline">Plan</span>
+                          {isCompactTaskHeader ? (
+                            <FileText className="h-3.5 w-3.5" />
+                          ) : (
+                            <span>Plan</span>
+                          )}
                         </button>
                       </div>
 
@@ -3405,8 +3447,11 @@ export default function GitRepoSelector({
                           disabled={loading}
                           title="Local"
                         >
-                          <HardDrive className="h-3.5 w-3.5 lg:hidden" />
-                          <span className="hidden lg:inline">Local</span>
+                          {isCompactTaskHeader ? (
+                            <HardDrive className="h-3.5 w-3.5" />
+                          ) : (
+                            <span>Local</span>
+                          )}
                         </button>
                         <div className="h-5 w-px bg-slate-200 dark:bg-[#30363d]" />
                         <button
@@ -3420,8 +3465,11 @@ export default function GitRepoSelector({
                           disabled={loading}
                           title="Workspace"
                         >
-                          <Layers className="h-3.5 w-3.5 lg:hidden" />
-                          <span className="hidden lg:inline">Workspace</span>
+                          {isCompactTaskHeader ? (
+                            <Layers className="h-3.5 w-3.5" />
+                          ) : (
+                            <span>Workspace</span>
+                          )}
                         </button>
                       </div>
 
