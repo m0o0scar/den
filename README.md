@@ -1,58 +1,70 @@
 # Palx
 
-Palx is a local session manager for AI coding agents. It lets you pick a Git repository, start an isolated worktree session, launch an agent CLI in a browser terminal, and manage the session lifecycle from one UI.
+Palx is an AI engineering team for your project.
+
+Not just one chat box. More like a workspace where you can hand off real work, keep it reviewable, and move from idea to shipped changes without playing copy-paste ping-pong all day.
 
 ![](./docs/poster.jpeg)
-![](./docs/screenshots.jpeg)
 
-## Major Features
+## Our Philosophy
 
-- **Isolated Sessions**: Uses `git worktree` to create clean, isolated environments for every task, with automatic per-session branch naming (`palx/<session>`).
-- **New Attempt Flow**: Start new sessions pre-filled with context (title, model, prompt, attachments) from any previous session to iterate quickly.
-- **Enhanced File Browser**:
-  - **Grid & List Views**: Browse files with rich thumbnails or a compact list.
-  - **Pinned Shortcuts**: Pin frequently used directories for quick navigation across session restarts.
-  - **Clipboard Paste**: Quickly add attachments by pasting files or images directly into the browser.
-  - **@ Mention Suggestions**: Intelligent file path suggestions from your tracked repository files.
-- **Dual Terminal Workspace**:
-  - Left terminal for agent execution.
-  - Right terminal for startup/dev scripts.
-- **Session Lifecycle Management**:
-  - Real-time Git status (ahead/behind counts, uncommitted changes).
-  - One-click **Commit**, **Merge**, and **Rebase** operations.
-  - **IDE Deep-links**: Open session worktrees directly in VS Code, Cursor, Windsurf, or Antigravity.
-- **Robust Session Resume**: Resume any session with full context, preserving original startup flags and model overrides.
-- **Async Operations**: Performance-optimized background tasks like session purging to keep the UI responsive.
-- **Multi-Agent Support**: Out-of-the-box support for Codex, Gemini, and Cursor Agent, with a customizable provider/model selector.
-- **Persistent Metadata**: Local metadata/config is stored in SQLite at `~/.viba/palx.db` (single-file, portable). Session prompt text files remain under `~/.viba/session-prompts`.
+Palx helps turn ideas into code, documents, designs, and reviewed outcomes.
 
-## Tech Stack
+It should feel less like “asking an assistant a question” and more like “assigning work to a capable team” that can:
 
-- Next.js (App Router) + React + TypeScript
-- Tailwind CSS + DaisyUI
-- `simple-git` for Git/worktree operations
-- `ttyd` + `tmux` as the web terminal backend/persistence layer (proxied at `/terminal`)
+- understand the problem
+- organize the right effort
+- execute the work
+- review the result
+- keep the project moving
 
-## Prerequisites
+## What Palx Does Today
 
-- Node.js and npm
-- A system package manager (`vibe-pal` auto-installs `ttyd` and `tmux` when missing on macOS/Linux, and runs `npx skills add https://github.com/vercel-labs/agent-browser --skill agent-browser --agent codex cursor gemini-cli -g -y` plus `npx skills add https://github.com/obra/superpowers --skill systematic-debugging --agent codex cursor gemini-cli -g -y` for Codex skill provisioning)
-- At least one supported agent CLI installed (for example `codex`, `gemini`, or `agent`)
+- Spins up isolated work sessions for tasks, so experiments do not spill all over your main branch.
+- Lets you work with Codex, Gemini, and Cursor from one place.
+- Supports fast retries with saved drafts and new-attempt flows.
+- Handles local repos, cloned repos, and multi-repo project setups.
+- Gives each session a proper workspace with agent and dev terminals side by side.
+- Shows Git status, diffs, history, branches, stashes, and merge/rebase actions in the app.
+- Remembers project settings, credentials, and session state so you can stop and resume without ceremony.
+- Can notify you when an agent finishes or needs attention.
+
+## Where It’s Going
+
+The long-term goal is bigger than “run an agent in a repo.”
+
+Palx is meant to become an AI engineering organization inside your workspace: adaptive, proactive, reviewable, and trustworthy. Sometimes that means a simple implementation task. Sometimes it means planning, coding, design exploration, documentation, and review happening together in isolated sessions.
+
+Over time, Palx should help with not only assigned work, but also the next useful work: triaging issues, finding bugs, fixing worthwhile problems, spotting technical debt, proposing improvements, and helping humans stay in control of the whole system.
 
 ## Getting Started
 
-Install dependencies and start development:
+### Run locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-### Auth0 Authentication
+Then open the local URL printed in the terminal, pick a project, choose an agent, and start a session.
 
-Palx now requires login before accessing the app.
+### Run with `npx`
 
-Add these variables to your `.env`:
+```bash
+npx vibe-pal
+```
+
+Palx starts on an available local port, usually `3200`.
+
+## What You’ll Need
+
+- Node.js and npm
+- At least one supported agent CLI installed, such as `codex`, `gemini`, or Cursor Agent CLI
+- `tmux` and `ttyd` for the full terminal experience
+
+## Auth
+
+Auth0 is optional. If you configure it, Palx can require login before access. If you do not, it runs locally in unprotected mode and shows a warning in the app.
 
 ```bash
 AUTH0_DOMAIN=your-tenant.us.auth0.com
@@ -62,52 +74,14 @@ AUTH0_SECRET=<openssl rand -hex 32>
 APP_BASE_URL=http://localhost:3200
 ```
 
-- Generate `AUTH0_SECRET` with: `openssl rand -hex 32`
-- In Auth0 Application settings, add:
-  - Allowed Callback URLs: `http://localhost:3200/auth/callback`
-  - Allowed Logout URLs: `http://localhost:3200/auth/logout`
-- If any required Auth0 variable is missing, Palx runs in unprotected mode and shows a warning banner on the home page.
+## Guiding Principle
 
-The app picks an available port starting at `3200` in development.
-Development mode does not auto-open a browser tab; open the printed local URL manually.
+Palx should be:
 
-Open the local URL printed in your terminal, then:
+- proactive
+- capable
+- adaptive
+- reviewable
+- trustworthy
 
-1. Select a local Git repository.
-2. Pick branch/agent/model and optional scripts.
-3. Start a session and work inside the generated worktree.
-
-## Run with npx
-
-```bash
-npx vibe-pal
-```
-
-This starts Palx on an available local port (default `3200`).  
-By default, the non-dev launcher opens `http://localhost:<port>` in your default browser once the server is ready.  
-Set `BROWSER=none` to disable auto-open.
-
-You can also pass options:
-
-```bash
-npx vibe-pal --port 3300
-npx vibe-pal --dev
-```
-
-Published npm packages are expected to include a prebuilt `.next` output, so `npx vibe-pal` does not build on the end user's machine.
-
-## Build and Run
-
-```bash
-npm run build
-npm run start
-```
-
-Production start uses port `3200` by default.
-
-Useful package scripts:
-
-```bash
-npm run cli          # run the packaged launcher locally
-npm run pack:preview # preview files that will be published
-```
+Human-controlled, with a lot less babysitting.
