@@ -114,6 +114,14 @@ function parseStatus(stdout) {
   return JSON.parse(stdout);
 }
 
+function tryParseStatus(stdout) {
+  try {
+    return parseStatus(stdout);
+  } catch {
+    return null;
+  }
+}
+
 function isRunningStatus(status) {
   return status?.BackendState === "Running";
 }
@@ -148,6 +156,28 @@ function ensureCommandResult(result, message) {
   throw new Error([message, stderr || stdout].filter(Boolean).join("\n"));
 }
 
+function extractAuthUrl(commandResult, parsedOutput = null) {
+  const authUrl = typeof parsedOutput?.AuthURL === "string" ? parsedOutput.AuthURL.trim() : "";
+  if (authUrl) {
+    return authUrl;
+  }
+
+  const combinedOutput = [commandResult.stdout, commandResult.stderr]
+    .filter((value) => typeof value === "string" && value.trim())
+    .join("\n");
+  const match = combinedOutput.match(/https:\/\/[^\s"'`]+/);
+  return match?.[0] || null;
+}
+
+function buildAuthUrlMessage(authUrl) {
+  return [
+    "Open this Tailscale login URL to authenticate this machine:",
+    authUrl,
+    "",
+    "After logging in, run `npm run tailscale` again.",
+  ].join("\n");
+}
+
 export async function runStart({
   host = DEFAULT_HOST,
   port = DEFAULT_PORT,
@@ -170,10 +200,14 @@ export async function runStart({
   let status = statusResult.status === 0 ? parseStatus(statusResult.stdout) : null;
 
   if (!isRunningStatus(status)) {
-    ensureCommandResult(
-      runCommand("tailscale", ["up"], { stdio: "inherit" }),
-      "tailscale up failed. Complete the login flow and try again.",
-    );
+    const upResult = runCommand("tailscale", ["up", "--json"]);
+    const upStatus = tryParseStatus(upResult.stdout);
+    const authUrl = extractAuthUrl(upResult, upStatus);
+    if (authUrl) {
+      throw new Error(buildAuthUrlMessage(authUrl));
+    }
+
+    ensureCommandResult(upResult, "tailscale up failed. Complete the login flow and try again.");
     ownsConnection = true;
     statusResult = ensureCommandResult(
       runCommand("tailscale", ["status", "--json"]),

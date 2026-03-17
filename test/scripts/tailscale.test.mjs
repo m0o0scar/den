@@ -65,13 +65,48 @@ describe("runStart", () => {
     );
   });
 
-  it("runs tailscale up when login is required and stores that it owns the connection", async () => {
+  it("shows the Tailscale login URL when authentication is required", async () => {
     const runner = createRunner([
       {
         status: 0,
         stdout: JSON.stringify({ BackendState: "NeedsLogin" }),
       },
-      { status: 0, stdout: "" },
+      {
+        status: 0,
+        stdout: JSON.stringify({
+          BackendState: "NeedsLogin",
+          AuthURL: "https://login.tailscale.com/a/example-auth",
+        }),
+      },
+    ]);
+    const statePath = createTempStatePath();
+
+    await assert.rejects(
+      runStart({
+        statePath,
+        commandExists: () => true,
+        checkLocalPort: async () => true,
+        runCommand: runner.run,
+      }),
+      /https:\/\/login\.tailscale\.com\/a\/example-auth/,
+    );
+
+    assert.strictEqual(runner.calls.length, 2);
+    assert.deepStrictEqual(runner.calls[0].args, ["status", "--json"]);
+    assert.deepStrictEqual(runner.calls[1].args, ["up", "--json"]);
+    assert.strictEqual(fs.existsSync(statePath), false);
+  });
+
+  it("stores that it owns the connection when tailscale up succeeds immediately", async () => {
+    const runner = createRunner([
+      {
+        status: 0,
+        stdout: JSON.stringify({ BackendState: "NeedsLogin" }),
+      },
+      {
+        status: 0,
+        stdout: JSON.stringify({ BackendState: "Running" }),
+      },
       {
         status: 0,
         stdout: JSON.stringify({
@@ -95,7 +130,7 @@ describe("runStart", () => {
 
     assert.strictEqual(runner.calls.length, 4);
     assert.deepStrictEqual(runner.calls[0].args, ["status", "--json"]);
-    assert.deepStrictEqual(runner.calls[1].args, ["up"]);
+    assert.deepStrictEqual(runner.calls[1].args, ["up", "--json"]);
     assert.deepStrictEqual(runner.calls[2].args, ["status", "--json"]);
     assert.deepStrictEqual(
       runner.calls[3].args,
