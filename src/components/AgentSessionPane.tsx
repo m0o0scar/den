@@ -9,7 +9,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { AlertCircle, Clock3, Loader2, Paperclip, PlayCircle, Send, Square, X } from 'lucide-react';
+import { AlertCircle, Clock3, FolderOpen, Loader2, Paperclip, PlayCircle, Send, Square, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import remarkGfm from 'remark-gfm';
@@ -79,6 +79,8 @@ type AgentSessionPaneProps = {
   workspacePath: string;
   onFeedback?: (message: string) => void;
   onHeaderMetaChange?: (meta: AgentSessionHeaderMeta) => void;
+  onRequestAddFiles?: () => void;
+  isAddingFiles?: boolean;
 };
 
 type PendingMessage = {
@@ -752,7 +754,7 @@ function isTimelineNearBottom(element: HTMLDivElement) {
 }
 
 const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProps>(function AgentSessionPane(
-  { sessionId, workspacePath, onFeedback, onHeaderMetaChange },
+  { sessionId, workspacePath, onFeedback, onHeaderMetaChange, onRequestAddFiles, isAddingFiles = false },
   ref,
 ) {
   const [runtime, setRuntime] = useState<SessionAgentRuntimeState | null>(null);
@@ -1819,6 +1821,19 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
               )}
             </div>
             <div className="flex items-center gap-2">
+              {onRequestAddFiles ? (
+                <button
+                  type="button"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-[#161b22] dark:text-slate-200 dark:hover:bg-[#1f2937]"
+                  onClick={onRequestAddFiles}
+                  disabled={isAddingFiles}
+                  title="Browse files and insert absolute paths into the agent input"
+                  aria-label="Add files"
+                >
+                  {isAddingFiles ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
+                  Add Files
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
