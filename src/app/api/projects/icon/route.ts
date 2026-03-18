@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { addProject, getProjects, updateProject } from '@/lib/store';
+import { buildManagedProjectIconPath } from '@/lib/project-icon-path';
 
 const MAX_ICON_BYTES = 2 * 1024 * 1024;
 const ICON_DIR = path.join(os.homedir(), '.viba', 'project-icons');
@@ -55,11 +55,6 @@ async function ensureProjectExists(projectPath: string) {
     throw new Error('Project not found.');
   }
   return ensuredProject;
-}
-
-function getManagedIconPath(projectPath: string, extension: string): string {
-  const projectHash = createHash('sha1').update(projectPath).digest('hex').slice(0, 16);
-  return path.join(ICON_DIR, `${projectHash}${extension}`);
 }
 
 function isManagedIconPath(iconPath: string | null | undefined): boolean {
@@ -156,7 +151,7 @@ export async function POST(request: Request) {
 
     await fs.mkdir(ICON_DIR, { recursive: true });
 
-    const destinationPath = getManagedIconPath(projectPath, extension);
+    const destinationPath = buildManagedProjectIconPath(ICON_DIR, projectPath, extension, fileBuffer);
     await removeExistingManagedIcon(existingProject.iconPath);
 
     await fs.writeFile(destinationPath, fileBuffer);
