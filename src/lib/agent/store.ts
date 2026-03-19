@@ -185,57 +185,77 @@ function mergeHistoryEntry(existing: HistoryEntry | null, next: HistoryEntry): H
   }
 
   switch (next.kind) {
-    case 'user':
+    case 'user': {
+      const incoming = next as Extract<HistoryEntry, { kind: 'user' }>;
+      const current = existing as Extract<HistoryEntry, { kind: 'user' }>;
       return {
-        ...next,
-        text: next.text || existing.text,
+        ...incoming,
+        text: incoming.text || current.text,
       };
-    case 'assistant':
+    }
+    case 'assistant': {
+      const incoming = next as Extract<HistoryEntry, { kind: 'assistant' }>;
+      const current = existing as Extract<HistoryEntry, { kind: 'assistant' }>;
       return {
-        ...next,
-        text: next.text || existing.text,
-        phase: next.phase ?? existing.phase,
+        ...incoming,
+        text: incoming.text || current.text,
+        phase: incoming.phase ?? current.phase,
       };
-    case 'reasoning':
+    }
+    case 'reasoning': {
+      const incoming = next as Extract<HistoryEntry, { kind: 'reasoning' }>;
+      const current = existing as Extract<HistoryEntry, { kind: 'reasoning' }>;
       return {
-        ...next,
-        summary: next.summary || existing.summary,
-        text: next.text || existing.text,
+        ...incoming,
+        summary: incoming.summary || current.summary,
+        text: incoming.text || current.text,
       };
-    case 'command':
+    }
+    case 'command': {
+      const incoming = next as Extract<HistoryEntry, { kind: 'command' }>;
+      const current = existing as Extract<HistoryEntry, { kind: 'command' }>;
       return {
-        ...next,
-        output: next.output || existing.output,
-        status: next.status || existing.status,
-        exitCode: next.exitCode ?? existing.exitCode,
-        toolName: next.toolName ?? existing.toolName,
-        toolInput: next.toolInput ?? existing.toolInput,
+        ...incoming,
+        output: incoming.output || current.output,
+        status: incoming.status || current.status,
+        exitCode: incoming.exitCode ?? current.exitCode,
+        toolName: incoming.toolName ?? current.toolName,
+        toolInput: incoming.toolInput ?? current.toolInput,
       };
-    case 'tool':
+    }
+    case 'tool': {
+      const incoming = next as Extract<HistoryEntry, { kind: 'tool' }>;
+      const current = existing as Extract<HistoryEntry, { kind: 'tool' }>;
       return {
-        ...next,
-        source: next.source || existing.source,
-        server: next.server ?? existing.server,
-        status: next.status || existing.status,
-        input: next.input ?? existing.input,
-        message: next.message ?? existing.message,
-        result: next.result ?? existing.result,
-        error: next.error ?? existing.error,
+        ...incoming,
+        source: incoming.source || current.source,
+        server: incoming.server ?? current.server,
+        status: incoming.status || current.status,
+        input: incoming.input ?? current.input,
+        message: incoming.message ?? current.message,
+        result: incoming.result ?? current.result,
+        error: incoming.error ?? current.error,
       };
-    case 'fileChange':
+    }
+    case 'fileChange': {
+      const incoming = next as Extract<HistoryEntry, { kind: 'fileChange' }>;
+      const current = existing as Extract<HistoryEntry, { kind: 'fileChange' }>;
       return {
-        ...next,
-        status: next.status || existing.status,
-        output: next.output || existing.output,
-        changes: next.changes.length > 0 ? next.changes : existing.changes,
+        ...incoming,
+        status: incoming.status || current.status,
+        output: incoming.output || current.output,
+        changes: incoming.changes.length > 0 ? incoming.changes : current.changes,
       };
+    }
     case 'plan': {
-      const steps = next.steps && next.steps.length > 0
-        ? next.steps
-        : existing.steps;
+      const incoming = next as Extract<HistoryEntry, { kind: 'plan' }>;
+      const current = existing as Extract<HistoryEntry, { kind: 'plan' }>;
+      const steps = incoming.steps && incoming.steps.length > 0
+        ? incoming.steps
+        : current.steps;
       return {
-        ...next,
-        text: next.text || existing.text || buildPlanText(steps ?? []),
+        ...incoming,
+        text: incoming.text || current.text || buildPlanText(steps ?? []),
         steps,
       };
     }
