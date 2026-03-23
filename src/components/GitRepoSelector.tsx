@@ -35,6 +35,12 @@ import { getConfig, updateConfig, updateProjectSettings, Config } from '@/app/ac
 import { listCredentials } from '@/app/actions/credentials';
 import type { Credential } from '@/lib/credentials';
 import { useRouter } from 'next/navigation';
+import {
+  DEFAULT_HOME_PROJECT_SORT,
+  normalizeHomeProjectSort,
+  sortHomeProjects,
+  type HomeProjectSort,
+} from '@/lib/home-project-sort';
 import { getBaseName } from '@/lib/path';
 import { buildRepoMentionSuggestions } from '@/lib/repo-mention-suggestions';
 import { doesSessionPrefillMatchProject } from '@/lib/session-prefill';
@@ -81,6 +87,7 @@ const AGENT_PROVIDER_MODEL_CACHE_STORAGE_KEY_PREFIX = 'viba:agent-provider-model
 const SESSION_TITLE_MAX_LENGTH = 120;
 const COMPACT_TASK_HEADER_THRESHOLD_PX = 1024;
 const STACKED_TASK_HEADER_THRESHOLD_PX = 960;
+const HOME_PROJECT_SORT_STORAGE_KEY = 'palx-home-project-sort';
 const SUPPORTED_AGENT_PROVIDERS = ['codex', 'gemini', 'cursor'] as const;
 const AGENT_PROVIDER_FALLBACK_LABELS: Record<string, string> = {
   codex: 'Codex CLI',
@@ -159,6 +166,26 @@ function toProjectRelativeRepoPath(projectPath: string, repoPath: string): strin
 function arePathListsEqual(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;
   return left.every((value, index) => value === right[index]);
+}
+
+function readStoredHomeProjectSort(): HomeProjectSort | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const storedSort = window.localStorage.getItem(HOME_PROJECT_SORT_STORAGE_KEY);
+    if (!storedSort) return null;
+    return normalizeHomeProjectSort(storedSort);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredHomeProjectSort(nextSort: HomeProjectSort): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(HOME_PROJECT_SORT_STORAGE_KEY, nextSort);
+  } catch {
+    // Ignore localStorage access errors.
+  }
 }
 
 function buildWorkspacePreparationInputKey(
@@ -436,6 +463,9 @@ export default function GitRepoSelector({
   const [isCompactTaskHeader, setIsCompactTaskHeader] = useState(false);
   const [isStackedTaskHeader, setIsStackedTaskHeader] = useState(false);
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
+  const [homeProjectSort, setHomeProjectSort] = useState<HomeProjectSort>(() => (
+    readStoredHomeProjectSort() ?? DEFAULT_HOME_PROJECT_SORT
+  ));
   const [repoSettingsError, setRepoSettingsError] = useState<string | null>(null);
   const [isUploadingProjectIcon, setIsUploadingProjectIcon] = useState(false);
   const [isSavingRepoSettings, setIsSavingRepoSettings] = useState(false);
@@ -661,6 +691,7 @@ export default function GitRepoSelector({
         ]);
         if (cancelled) return;
         setConfig(cfg);
+        setHomeProjectSort(readStoredHomeProjectSort() ?? cfg.homeProjectSort);
         setAllSessions(sessions);
         setAllDrafts(drafts);
       } catch (e) {
@@ -2775,15 +2806,31 @@ export default function GitRepoSelector({
     return alias || getBaseName(projectPath);
   }, [config?.projectSettings]);
 
+  const sortedRecentProjects = useMemo(() => (
+    sortHomeProjects(recentProjects, homeProjectSort, getProjectDisplayName)
+  ), [getProjectDisplayName, homeProjectSort, recentProjects]);
+
   const filteredRecentProjects = useMemo(() => {
     const normalizedQuery = homeSearchQuery.trim().toLowerCase();
-    if (!normalizedQuery) return recentProjects;
+    if (!normalizedQuery) return sortedRecentProjects;
 
-    return recentProjects.filter((projectPath) => {
+    return sortedRecentProjects.filter((projectPath) => {
       const displayName = getProjectDisplayName(projectPath).toLowerCase();
       return displayName.includes(normalizedQuery) || projectPath.toLowerCase().includes(normalizedQuery);
     });
-  }, [homeSearchQuery, recentProjects, getProjectDisplayName]);
+  }, [getProjectDisplayName, homeSearchQuery, sortedRecentProjects]);
+
+  const handleHomeProjectSortChange = useCallback(async (nextSort: HomeProjectSort) => {
+    writeStoredHomeProjectSort(nextSort);
+    setHomeProjectSort(nextSort);
+
+    try {
+      const nextConfig = await updateConfig({ homeProjectSort: nextSort });
+      setConfig(nextConfig);
+    } catch (sortError) {
+      console.error('Failed to save home project sort:', sortError);
+    }
+  }, []);
 
   const selectableProjects = selectedRepo
     ? (recentProjects.includes(selectedRepo) ? recentProjects : [selectedRepo, ...recentProjects])
@@ -3019,6 +3066,7 @@ export default function GitRepoSelector({
           error={error}
           isLoaded={isLoaded}
           homeSearchQuery={homeSearchQuery}
+          homeProjectSort={homeProjectSort}
           showLogout={showLogout}
           logoutEnabled={logoutEnabled}
           themeModeLabel={themeModeLabel}
@@ -3036,6 +3084,7 @@ export default function GitRepoSelector({
           projectGitReposByPath={projectGitReposByPath}
           discoveringProjectGitRepos={discoveringHomeProjectGitRepos}
           onHomeSearchQueryChange={setHomeSearchQuery}
+          onHomeProjectSortChange={handleHomeProjectSortChange}
           onOpenCredentials={() => router.push('/settings')}
           onCycleThemeMode={handleCycleThemeMode}
           onSelectProject={handleSelectRepo}
