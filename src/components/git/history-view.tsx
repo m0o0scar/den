@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic';
 import { useGitLog, useGitBranches, useGitStatus, useGitAction, useCommitDiff, useCommitFileDiff, CommitFile, useRepository, useUpdateRepository, useSettings, useUpdateSettings } from '@/hooks/use-git';
 import { useQueryClient } from '@tanstack/react-query';
 import { buildConflictAgentCommand, type ConflictAgentOperation } from '@/lib/ad-hoc-agent';
-import { Repository, Commit } from '@/lib/types';
+import { Repository, Commit, GitWorktree } from '@/lib/types';
 import AdHocAgentTerminalModal from '@/components/AdHocAgentTerminalModal';
 import { GitGraph, GitGraphHandle } from './git-graph';
 import {
@@ -304,6 +304,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [branchesToDelete, setBranchesToDelete] = useState<string[]>([]);
   const [deleteRemoteBranch, setDeleteRemoteBranch] = useState(false);
+  const [deleteAssociatedWorktrees, setDeleteAssociatedWorktrees] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeleteWorktreeOpen, setIsDeleteWorktreeOpen] = useState(false);
   const [worktreeToDelete, setWorktreeToDelete] = useState<string | null>(null);
@@ -375,6 +376,18 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   const closeConflictAgentDialog = useCallback(() => {
     setIsConflictAgentModalOpen(false);
     setConflictAgentOperation(null);
+  }, []);
+
+  const closeDeleteBranchDialog = useCallback(() => {
+    setIsDeleteOpen(false);
+    setBranchesToDelete([]);
+    setDeleteRemoteBranch(false);
+    setDeleteAssociatedWorktrees(false);
+  }, []);
+
+  const closeDeleteWorktreeDialog = useCallback(() => {
+    setIsDeleteWorktreeOpen(false);
+    setWorktreeToDelete(null);
   }, []);
 
   // Push to remote dialog state
@@ -538,14 +551,11 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
       return;
     }
     if (isDeleteOpen) {
-      setIsDeleteOpen(false);
-      setBranchesToDelete([]);
-      setDeleteRemoteBranch(false);
+      closeDeleteBranchDialog();
       return;
     }
     if (isDeleteWorktreeOpen) {
-      setIsDeleteWorktreeOpen(false);
-      setWorktreeToDelete(null);
+      closeDeleteWorktreeDialog();
       return;
     }
     if (isDeleteTagOpen) {
@@ -597,6 +607,8 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     isCherryPickOpen,
     isDeleteOpen,
     isDeleteWorktreeOpen,
+    closeDeleteBranchDialog,
+    closeDeleteWorktreeDialog,
     isDeleteTagOpen,
     isRewordOpen,
     closeRewordDialog,
@@ -1608,6 +1620,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     if (deletableBranches.length === 0) return;
     setBranchesToDelete(deletableBranches);
     setDeleteRemoteBranch(false);
+    setDeleteAssociatedWorktrees(false);
     setIsDeleteOpen(true);
   };
 
@@ -1695,7 +1708,10 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
           runGitAction({
             repoPath,
             action: 'delete-branch',
-            data: { branch: branchRef },
+            data: {
+              branch: branchRef,
+              deleteAssociatedWorktree: deleteAssociatedWorktrees && Boolean(associatedWorktreesByBranch.get(branchRef)?.length),
+            },
             suppressErrorToast: true,
           })
         );
@@ -1730,9 +1746,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
         });
       }
 
-      setIsDeleteOpen(false);
-      setBranchesToDelete([]);
-      setDeleteRemoteBranch(false);
+      closeDeleteBranchDialog();
       setSelectedBranchRefs([]);
       setBranchSelectionAnchor(null);
     } catch (e) {
@@ -1780,10 +1794,9 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
       await runGitAction({
         repoPath,
         action: 'delete-worktree',
-        data: { path: worktreeToDelete },
+        data: { path: worktreeToDelete, deleteBranch: true },
       });
-      setIsDeleteWorktreeOpen(false);
-      setWorktreeToDelete(null);
+      closeDeleteWorktreeDialog();
     } catch (e) {
       console.error(e);
     } finally {
@@ -2930,6 +2943,30 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     });
   }, [branchData?.remoteUrls]);
   const remoteNameForTagDelete = remoteNames[0] || null;
+  const associatedWorktreesByBranch = useMemo(() => {
+    const worktreesByBranch = new Map<string, GitWorktree[]>();
+    for (const worktree of branchData?.worktrees ?? []) {
+      if (worktree.isCurrent || !worktree.branch) continue;
+      const existing = worktreesByBranch.get(worktree.branch) ?? [];
+      existing.push(worktree);
+      worktreesByBranch.set(worktree.branch, existing);
+    }
+    return worktreesByBranch;
+  }, [branchData?.worktrees]);
+  const selectedAssociatedWorktrees = useMemo(() => {
+    const worktrees: GitWorktree[] = [];
+    const seenPaths = new Set<string>();
+    for (const branchRef of branchesToDelete) {
+      if (branchRef.startsWith('remotes/')) continue;
+      for (const worktree of associatedWorktreesByBranch.get(branchRef) ?? []) {
+        const normalizedPath = worktree.path.trim();
+        if (!normalizedPath || seenPaths.has(normalizedPath)) continue;
+        seenPaths.add(normalizedPath);
+        worktrees.push(worktree);
+      }
+    }
+    return worktrees;
+  }, [associatedWorktreesByBranch, branchesToDelete]);
   const selectedTrackingUpstreams = useMemo(() => {
     const upstreams: string[] = [];
     for (const branchRef of branchesToDelete) {
@@ -2939,6 +2976,18 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     }
     return Array.from(new Set(upstreams));
   }, [branchesToDelete, trackingInfoByBranch]);
+  const worktreeBranchToDelete = useMemo(() => {
+    const targetPath = worktreeToDelete?.trim();
+    if (!targetPath) return null;
+
+    for (const worktree of branchData?.worktrees ?? []) {
+      if (worktree.path.trim() === targetPath) {
+        return worktree.branch?.trim() || null;
+      }
+    }
+
+    return null;
+  }, [branchData?.worktrees, worktreeToDelete]);
   const trackingInfoForRename = useMemo(() => {
     if (!branchToRename || remoteBranchToRename) return null;
     return trackingInfoByBranch?.[branchToRename] ?? null;
@@ -3577,8 +3626,30 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 </label>
               </div>
             )}
+            {selectedAssociatedWorktrees.length > 0 && (
+              <div className="form-control">
+                <label className="label cursor-pointer justify-start items-start gap-2 min-w-0">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm"
+                    checked={deleteAssociatedWorktrees}
+                    onChange={(e) => setDeleteAssociatedWorktrees(e.target.checked)}
+                    disabled={isDeleting}
+                  />
+                  <span className="label-text break-words whitespace-normal">
+                    {selectedAssociatedWorktrees.length === 1 ? (
+                      <>
+                        Delete associated worktree <span className="font-mono opacity-70 break-all">{selectedAssociatedWorktrees[0].path}</span>
+                      </>
+                    ) : (
+                      <>Delete {selectedAssociatedWorktrees.length} associated worktrees</>
+                    )}
+                  </span>
+                </label>
+              </div>
+            )}
             <div className="modal-action">
-              <button className="btn" onClick={() => { setIsDeleteOpen(false); setBranchesToDelete([]); setDeleteRemoteBranch(false); }} disabled={isDeleting}>Cancel</button>
+              <button className="btn" onClick={closeDeleteBranchDialog} disabled={isDeleting}>Cancel</button>
               <button className="btn btn-error" onClick={handleDeleteBranch} disabled={isDeleting}>
                 {isDeleting && <span className="loading loading-spinner loading-xs"></span>}
                 Delete
@@ -3586,7 +3657,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             </div>
           </div>
           <form method="dialog" className="modal-backdrop">
-            <button onClick={() => { setIsDeleteOpen(false); setBranchesToDelete([]); setDeleteRemoteBranch(false); }}>close</button>
+            <button onClick={closeDeleteBranchDialog}>close</button>
           </form>
         </dialog>
       )}
@@ -3601,13 +3672,15 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             <p className="text-sm text-error break-words">
               This will remove the worktree from git and remove its working directory.
             </p>
+            {worktreeBranchToDelete && (
+              <p className="text-sm break-words mt-2">
+                The associated local branch <span className="font-mono opacity-70 break-all">{worktreeBranchToDelete}</span> will also be deleted.
+              </p>
+            )}
             <div className="modal-action">
               <button
                 className="btn"
-                onClick={() => {
-                  setIsDeleteWorktreeOpen(false);
-                  setWorktreeToDelete(null);
-                }}
+                onClick={closeDeleteWorktreeDialog}
                 disabled={isDeletingWorktree}
               >
                 Cancel
@@ -3623,14 +3696,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             </div>
           </div>
           <form method="dialog" className="modal-backdrop">
-            <button
-              onClick={() => {
-                setIsDeleteWorktreeOpen(false);
-                setWorktreeToDelete(null);
-              }}
-            >
-              close
-            </button>
+            <button onClick={closeDeleteWorktreeDialog}>close</button>
           </form>
         </dialog>
       )}

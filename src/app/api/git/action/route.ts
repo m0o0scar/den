@@ -226,11 +226,15 @@ export async function POST(request: Request) {
         break;
       case 'delete-branch':
         if (!data?.branch) throw new Error('Branch name is required to delete branch');
-        await git.deleteBranch(data.branch);
+        await git.deleteBranch(data.branch, {
+          deleteAssociatedWorktree: Boolean(data?.deleteAssociatedWorktree),
+        });
         break;
       case 'delete-worktree':
         if (!data?.path) throw new Error('Worktree path is required to delete worktree');
-        await git.deleteWorktree(data.path);
+        await git.deleteWorktree(data.path, {
+          deleteBranch: data?.deleteBranch !== false,
+        });
         break;
       case 'delete-remote-branch':
         if (!data?.remote) throw new Error('Remote name is required to delete remote branch');
