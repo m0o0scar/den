@@ -103,6 +103,9 @@ const HISTORY_ITEM_GAP_PX = 12;
 const HISTORY_ITEM_OVERSCAN_PX = 600;
 const COMPOSER_MAX_HEIGHT = 112;
 const STREAMING_HISTORY_TAIL_COUNT = 4;
+const ACTIVE_TURN_REFRESH_INTERVAL_MS = 15_000;
+const SOCKET_IDLE_REFRESH_THRESHOLD_MS = 90_000;
+const POSSIBLE_STALE_THRESHOLD_MS = 5 * 60_000;
 const TIMELINE_BOTTOM_STICK_THRESHOLD_PX = 48;
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -804,6 +807,8 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
   const [timelineScrollTop, setTimelineScrollTop] = useState(0);
   const [timelineViewportHeight, setTimelineViewportHeight] = useState(0);
   const [expandedHistoryItems, setExpandedHistoryItems] = useState<Record<string, boolean>>({});
+  const [lastSocketMessageAt, setLastSocketMessageAt] = useState<number | null>(null);
+  const [possibleStale, setPossibleStale] = useState(false);
 
   const scheduleRefresh = useCallback((delay = 120) => {
     if (refreshTimerRef.current !== null) {
@@ -945,6 +950,8 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
           reconnectAttempt = 0;
           clearReconnectTimer();
           setSocketConnected(true);
+          setLastSocketMessageAt(Date.now());
+          setPossibleStale(false);
           setError(null);
           scheduleRefresh(0);
         };
@@ -969,6 +976,8 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
               return;
             }
 
+            setLastSocketMessageAt(Date.now());
+            setPossibleStale(false);
             setRuntime(message.snapshot);
             setError(null);
             setHistory((current) => {
@@ -1024,6 +1033,47 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
 
   const activeRunState = runtime?.runState ?? 'idle';
   const isTurnActive = activeRunState === 'queued' || activeRunState === 'running';
+
+  useEffect(() => {
+    if (!isTurnActive) {
+      setPossibleStale(false);
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      scheduleRefresh(0);
+    }, ACTIVE_TURN_REFRESH_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isTurnActive, scheduleRefresh]);
+
+  useEffect(() => {
+    if (!isTurnActive) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      const lastActivityMs = runtime?.lastActivityAt ? Date.parse(runtime.lastActivityAt) : NaN;
+      const baseline = Number.isFinite(lastActivityMs)
+        ? lastActivityMs
+        : lastSocketMessageAt;
+      if (baseline == null) {
+        return;
+      }
+
+      const idleMs = Date.now() - baseline;
+      if (idleMs >= SOCKET_IDLE_REFRESH_THRESHOLD_MS) {
+        scheduleRefresh(0);
+      }
+      setPossibleStale(idleMs >= POSSIBLE_STALE_THRESHOLD_MS);
+    }, 15_000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isTurnActive, lastSocketMessageAt, runtime?.lastActivityAt, scheduleRefresh]);
 
   const canSend = !loading && !isSending && (composerValue.trim().length > 0 || pendingAttachmentPaths.length > 0);
   const optimisticHistory = useMemo(
@@ -1570,6 +1620,11 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
                     <Clock3 className="h-3 w-3" />
                     {socketConnected ? 'live' : 'offline'}
                   </div>
+                  {possibleStale ? (
+                    <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-300">
+                      No recent agent activity detected. Refresh fallback is active.
+                    </div>
+                  ) : null}
                 </div>
                 <div>
                   <div className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Thread</div>
