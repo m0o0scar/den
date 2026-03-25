@@ -14,4 +14,21 @@ export const missingAuth0EnvVars = REQUIRED_AUTH0_ENV_VARS.filter((name) => {
 
 export const isAuth0Configured = missingAuth0EnvVars.length === 0;
 
-export const auth0 = isAuth0Configured ? new Auth0Client() : null;
+function getConfiguredAppBaseUrl(): string | string[] | undefined {
+  const values = (process.env.APP_BASE_URL ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (values.length === 0) {
+    return undefined;
+  }
+
+  return values.length === 1 ? values[0] : values;
+}
+
+export const auth0 = isAuth0Configured
+  ? new Auth0Client({
+      appBaseUrl: getConfiguredAppBaseUrl(),
+    })
+  : null;

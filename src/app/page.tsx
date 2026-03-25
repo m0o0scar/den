@@ -1,8 +1,15 @@
 import Image from 'next/image';
+import { headers } from 'next/headers';
 import HomeDashboardContainer from '@/components/HomeDashboardContainer';
 import { isAuth0Configured } from '@/lib/auth0';
+import { getRequestHostname } from '@/lib/request-origin';
+import { isLocalHostname } from '@/lib/url';
 
-export default function Home() {
+export default async function Home() {
+  const requestHeaders = await headers();
+  const requestHost = getRequestHostname(requestHeaders);
+  const logoutEnabled = isAuth0Configured && !isLocalHostname(requestHost);
+
   return (
     <div className="min-h-screen bg-[#f6f6f8] text-slate-950 transition-colors dark:bg-[#0d1117] dark:text-white">
       <a
@@ -25,7 +32,7 @@ export default function Home() {
         </span>
       </a>
       <main className="relative z-10 flex min-h-screen flex-col items-center justify-start p-4 transition-colors md:p-6">
-        <HomeDashboardContainer showLogout={isAuth0Configured} logoutEnabled={isAuth0Configured} />
+        <HomeDashboardContainer showLogout={logoutEnabled} logoutEnabled={logoutEnabled} />
       </main>
     </div>
   );

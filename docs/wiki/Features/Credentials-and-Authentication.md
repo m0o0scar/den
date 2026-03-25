@@ -85,7 +85,7 @@ sequenceDiagram
 - Duplicate credentials are blocked per host/user combination.
 - Clone/push credential matching handles SSH and HTTPS remotes and GitLab host disambiguation ([src/lib/terminal-session.ts](../../../src/lib/terminal-session.ts), [src/lib/credentials.ts](../../../src/lib/credentials.ts), [src/app/actions/repository.ts](../../../src/app/actions/repository.ts)).
 - Clone errors sanitize secret values from messages before returning to UI ([src/app/actions/repository.ts](../../../src/app/actions/repository.ts)).
-- Home page warns when Auth0 env vars are missing and app runs in unprotected mode ([src/app/page.tsx](../../../src/app/page.tsx)).
+- Localhost and loopback access bypass login, while non-local access is blocked unless Auth0 env vars are configured ([src/proxy.ts](../../../src/proxy.ts), [src/lib/auth0.ts](../../../src/lib/auth0.ts)).
 
 ## Observability
 

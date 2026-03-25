@@ -86,7 +86,7 @@ Palx starts on an available local port, usually `3200`.
 
 ## Auth
 
-Auth0 is optional. If you configure it, Palx can require login before access. If you do not, it runs locally in unprotected mode and shows a warning in the app.
+Palx skips authentication on localhost and loopback addresses. Any non-local host requires Auth0 login before use, so remote access should only be exposed after Auth0 is configured.
 
 ```bash
 AUTH0_DOMAIN=your-tenant.us.auth0.com
@@ -96,7 +96,20 @@ AUTH0_SECRET=<openssl rand -hex 32>
 APP_BASE_URL=http://localhost:3200
 ```
 
-For Tailscale access, make sure `APP_BASE_URL` matches the Tailscale URL users will actually open instead of `http://localhost:3200`.
+If you want Auth0 to work across multiple known origins, set `APP_BASE_URL` to a comma-separated list, for example `http://localhost:3200,https://palx.nport.link`.
+
+For remote access, make sure every origin users will actually open is included in `APP_BASE_URL` and registered in Auth0 Allowed Callback / Logout URLs.
+
+### Channels
+
+```bash
+npm run channel:nport
+npm run channel:ngrok
+```
+
+Both commands now print the detected public URL plus the exact Auth0 callback URL, logout URL, and `APP_BASE_URL` entry for that channel.
+
+`npm run channel` remains an alias for `npm run channel:nport`.
 
 ## Guiding Principle
 

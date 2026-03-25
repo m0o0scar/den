@@ -1,6 +1,24 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { normalizePreviewUrl } from './url.ts';
+import { isLocalHostname, normalizePreviewUrl } from './url.ts';
+
+describe('isLocalHostname', () => {
+    it('detects localhost and loopback hostnames', () => {
+        assert.strictEqual(isLocalHostname('localhost'), true);
+        assert.strictEqual(isLocalHostname('app.localhost'), true);
+        assert.strictEqual(isLocalHostname('127.0.0.1'), true);
+        assert.strictEqual(isLocalHostname('127.0.0.42:3200'), true);
+        assert.strictEqual(isLocalHostname('::1'), true);
+        assert.strictEqual(isLocalHostname('[::1]:3200'), true);
+        assert.strictEqual(isLocalHostname('0.0.0.0'), true);
+    });
+
+    it('does not treat remote hosts as local', () => {
+        assert.strictEqual(isLocalHostname('palx.nport.link'), false);
+        assert.strictEqual(isLocalHostname('example.com'), false);
+        assert.strictEqual(isLocalHostname('100.88.1.2'), false);
+    });
+});
 
 describe('normalizePreviewUrl', () => {
     it('should return null for empty string', () => {
@@ -29,5 +47,6 @@ describe('normalizePreviewUrl', () => {
     it('should prepend http:// for localhost and loopback hosts when protocol is missing', () => {
         assert.strictEqual(normalizePreviewUrl('localhost:3000'), 'http://localhost:3000');
         assert.strictEqual(normalizePreviewUrl('127.0.0.1:8080'), 'http://127.0.0.1:8080');
+        assert.strictEqual(normalizePreviewUrl('app.localhost:3200'), 'http://app.localhost:3200');
     });
 });

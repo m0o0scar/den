@@ -1,3 +1,34 @@
+function normalizeHostnameCandidate(rawValue: string): string {
+    const trimmed = rawValue.trim().toLowerCase().replace(/\.$/, '');
+    if (!trimmed) {
+        return '';
+    }
+
+    if (trimmed.startsWith('[')) {
+        const closingBracketIndex = trimmed.indexOf(']');
+        if (closingBracketIndex >= 0) {
+            return trimmed.slice(1, closingBracketIndex);
+        }
+    }
+
+    const colonCount = trimmed.split(':').length - 1;
+    if (colonCount === 1) {
+        return trimmed.split(':')[0] ?? '';
+    }
+
+    return trimmed;
+}
+
+export function isLocalHostname(rawValue: string): boolean {
+    const hostname = normalizeHostnameCandidate(rawValue);
+
+    return hostname === 'localhost'
+        || hostname.endsWith('.localhost')
+        || hostname === '::1'
+        || hostname === '0.0.0.0'
+        || /^127(?:\.\d{1,3}){3}$/.test(hostname);
+}
+
 export const normalizePreviewUrl = (rawValue: string): string | null => {
     const trimmed = rawValue.trim();
     if (!trimmed) return null;
@@ -18,12 +49,6 @@ export const normalizePreviewUrl = (rawValue: string): string | null => {
     }
 
     const hostPort = firstSegment.includes('@') ? firstSegment.slice(firstSegment.lastIndexOf('@') + 1) : firstSegment;
-    const host = hostPort.startsWith('[')
-        ? hostPort.slice(1, Math.max(1, hostPort.indexOf(']'))).toLowerCase()
-        : hostPort.split(':')[0].toLowerCase();
-
-    const protocol = host === 'localhost' || host === '127.0.0.1' || host === '::1'
-        ? 'http'
-        : 'https';
+    const protocol = isLocalHostname(hostPort) ? 'http' : 'https';
     return `${protocol}://${trimmed}`;
 };

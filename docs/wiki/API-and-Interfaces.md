@@ -88,7 +88,7 @@ Implementation:
 
 ## Authn/Authz Model
 
-- Auth0 is optional; enabled only when required env vars are set (`AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`) in [src/lib/auth0.ts](../../src/lib/auth0.ts).
+- Localhost and loopback hosts bypass authentication. Any non-local host requires Auth0, using `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, and `AUTH0_SECRET` from [src/lib/auth0.ts](../../src/lib/auth0.ts).
 - Middleware enforces session checks on app routes and APIs when configured: [src/proxy.ts](../../src/proxy.ts).
 
 ## Validation, Error Shapes, and Status Codes
