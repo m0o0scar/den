@@ -12,6 +12,7 @@ export type HomeRepoCardProps = {
   isProjectOpenable?: boolean;
   isDarkThemeActive: boolean;
   runningSessionCount: number;
+  latestRunningSessionId?: string | null;
   draftCount: number;
   projectIconPath: string | null;
   showProjectIcon: boolean;
@@ -37,6 +38,7 @@ export function HomeRepoCard({
   isProjectOpenable = true,
   isDarkThemeActive,
   runningSessionCount,
+  latestRunningSessionId,
   draftCount,
   projectIconPath,
   showProjectIcon,
@@ -186,6 +188,18 @@ export function HomeRepoCard({
                       )}
                     </div>
                   )}
+                  {latestRunningSessionId ? (
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        window.location.assign(`/session/${encodeURIComponent(latestRunningSessionId)}`);
+                      }}
+                      className="btn btn-circle btn-xs border-0 bg-white/50 text-slate-600 opacity-100 shadow-none backdrop-blur-sm transition-opacity md:opacity-0 md:group-hover:opacity-100 hover:bg-white/80 hover:text-slate-900 dark:bg-white/10 dark:text-slate-300 dark:hover:bg-white/20 dark:hover:text-white"
+                      title="Open latest running session"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
                   <button
                     onClick={(event) => {
                       void onOpenProjectSettings(event, project);

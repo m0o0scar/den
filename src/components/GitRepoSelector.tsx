@@ -55,8 +55,9 @@ import {
   findActiveMention,
   replaceActiveMention,
 } from '@/lib/task-description-mentions';
-import { buildAgentStartupPrompt, hasStartupTaskDescription } from '@/lib/agent-startup-prompt';
+import { hasStartupTaskDescription } from '@/lib/agent-startup-prompt';
 import { normalizeProviderReasoningEffort } from '@/lib/agent/reasoning';
+import { getEffectiveProjectAgentRuntimeSettings } from '@/lib/project-agent-runtime';
 import {
   resolveShouldUseDarkTheme,
   THEME_MODE_STORAGE_KEY,
@@ -74,6 +75,7 @@ import type {
   AgentProvider,
   AppStatus,
   ModelOption,
+  Project,
   ProviderCatalogEntry,
   ReasoningEffort,
   SessionWorkspacePreference,
@@ -266,28 +268,6 @@ function normalizeProviderReasoningSelection(
   return normalizeProviderReasoningEffort(provider, normalizeReasoningSelection(value));
 }
 
-function getEffectiveAgentRuntimeSettings(config: Config, repoPath: string) {
-  const projectSettings = config.projectSettings[repoPath] || {};
-  const resolvedProvider = normalizeAgentProvider(
-    projectSettings.agentProvider ?? config.defaultAgentProvider,
-  );
-  const resolvedModel =
-    projectSettings.agentModel ?? config.defaultAgentModel ?? '';
-  const resolvedReasoningEffort =
-    normalizeProviderReasoningEffort(
-      resolvedProvider,
-      projectSettings.agentReasoningEffort
-        ?? config.defaultAgentReasoningEffort,
-    ) || '';
-
-  return {
-    provider: resolvedProvider,
-    model: resolvedModel,
-    reasoningEffort: resolvedReasoningEffort,
-    projectSettings,
-  };
-}
-
 function normalizeModelOption(input: unknown): ModelOption | null {
   if (!input || typeof input !== 'object') return null;
 
@@ -413,6 +393,7 @@ export default function GitRepoSelector({
   const [config, setConfig] = useState<Config | null>(null);
 
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [repoForSettings, setRepoForSettings] = useState<string | null>(null);
   const [repoAlias, setRepoAlias] = useState<string>('');
   const [repoStartupCommand, setRepoStartupCommand] = useState<string>(DEFAULT_PROJECT_STARTUP_COMMAND);
@@ -491,6 +472,7 @@ export default function GitRepoSelector({
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const sessionNavigationCommittedRef = useRef(false);
   const agentRuntimeSettingsRequestRef = useRef(0);
+  const hydratedAgentRuntimeRepoRef = useRef<string | null>(null);
   const [preparedWorkspace, setPreparedWorkspace] = useState<WorkspacePreparationState | null>(null);
   const [isPreparingWorkspace, setIsPreparingWorkspace] = useState(false);
   const activePreparedWorkspaceRef = useRef<WorkspacePreparationState | null>(null);
@@ -517,7 +499,9 @@ export default function GitRepoSelector({
   }, []);
 
   const resetSelectedProjectState = useCallback((projectPath: string) => {
+    hydratedAgentRuntimeRepoRef.current = null;
     setSelectedRepo(projectPath);
+    setSelectedProjectId(null);
     setRepoFilesCache([]);
     setProjectGitRepos([]);
     setBranchesByRepo({});
@@ -539,10 +523,8 @@ export default function GitRepoSelector({
     return requestId;
   }, [resetSelectedProjectState]);
 
-  const navigateToSession = useCallback((sessionName: string, options?: { fresh?: boolean }) => {
-    const targetPath = options?.fresh
-      ? `/session/${encodeURIComponent(sessionName)}?fresh=1`
-      : `/session/${encodeURIComponent(sessionName)}`;
+  const navigateToSession = useCallback((sessionName: string) => {
+    const targetPath = `/session/${encodeURIComponent(sessionName)}`;
     sessionNavigationCommittedRef.current = true;
     recordPendingSessionNavigation(sessionName);
     // Use a hard navigation here. App Router transitions out of /new can be interrupted
@@ -910,9 +892,15 @@ export default function GitRepoSelector({
     path: string,
     resolvedConfig?: Config,
     selectedProjectRequestId?: number,
+    projectSettingsKey?: string,
   ) => {
     // Load saved session scripts
-    await loadSavedAgentSettings(path, resolvedConfig, selectedProjectRequestId);
+    await loadSavedAgentSettings(
+      path,
+      resolvedConfig,
+      selectedProjectRequestId,
+      projectSettingsKey,
+    );
     if (
       selectedProjectRequestId !== undefined
       && !isActiveSelectedProjectLoad(selectedProjectRequestId)
@@ -950,7 +938,9 @@ export default function GitRepoSelector({
     );
   }, [selectedProjectGitContexts, selectedRepo, sessionWorkspacePreference]);
 
-  const ensureProjectRegistered = useCallback(async (projectPath: string) => {
+  const selectedProjectSettingsReference = selectedProjectId || selectedRepo;
+
+  const ensureProjectRegistered = useCallback(async (projectPath: string): Promise<Project | null> => {
     try {
       const response = await fetch('/api/projects', {
         method: 'POST',
@@ -958,17 +948,21 @@ export default function GitRepoSelector({
         body: JSON.stringify({ path: projectPath, name: getBaseName(projectPath) }),
       });
 
-      if (response.ok) return;
+      if (response.ok) {
+        const payload = await response.json().catch(() => null) as Project | null;
+        return payload && typeof payload.id === 'string' ? payload : null;
+      }
 
       const payload = await response.json().catch(() => null) as { error?: unknown } | null;
       const errorMessage = typeof payload?.error === 'string' ? payload.error : '';
-      if (/already exists/i.test(errorMessage)) return;
-      if (response.status === 500 && !errorMessage) return;
+      if (/already exists/i.test(errorMessage)) return null;
+      if (response.status === 500 && !errorMessage) return null;
 
       console.warn('Failed to ensure project registration:', errorMessage || response.statusText);
     } catch (error) {
       console.warn('Failed to ensure project registration:', error);
     }
+    return null;
   }, []);
 
   const handleSelectRepo = async (
@@ -981,7 +975,14 @@ export default function GitRepoSelector({
       ? beginSelectedProjectLoad(path)
       : undefined;
     try {
-      await ensureProjectRegistered(path);
+      const registeredProject = await ensureProjectRegistered(path);
+      if (
+        selectedProjectRequestId !== undefined
+        && !isActiveSelectedProjectLoad(selectedProjectRequestId)
+      ) {
+        return false;
+      }
+      setSelectedProjectId(registeredProject?.id ?? null);
 
       const currentConfig = config || await getConfig();
       if (
@@ -1024,7 +1025,12 @@ export default function GitRepoSelector({
         return true;
       }
 
-      await loadSelectedRepoData(path, nextConfig, selectedProjectRequestId);
+      await loadSelectedRepoData(
+        path,
+        nextConfig,
+        selectedProjectRequestId,
+        registeredProject?.id ?? undefined,
+      );
       if (
         selectedProjectRequestId !== undefined
         && !isActiveSelectedProjectLoad(selectedProjectRequestId)
@@ -1130,12 +1136,13 @@ export default function GitRepoSelector({
   useEffect(() => {
     if (mode !== 'new') return;
 
-    const retrySessionName = consumePendingSessionNavigationRetry();
-    if (!retrySessionName) return;
+    const pendingNavigation = consumePendingSessionNavigationRetry();
+    if (!pendingNavigation) return;
     if (sessionNavigationCommittedRef.current) return;
 
     sessionNavigationCommittedRef.current = true;
-    router.replace(`/session/${encodeURIComponent(retrySessionName)}`);
+    const nextPath = `/session/${encodeURIComponent(pendingNavigation.sessionName)}`;
+    router.replace(nextPath);
   }, [mode, router]);
 
   useEffect(() => {
@@ -1144,6 +1151,7 @@ export default function GitRepoSelector({
     if (!repoPath) {
       pendingProjectRouteSyncRef.current = null;
       setSelectedRepo(null);
+      setSelectedProjectId(null);
       setExistingSessions([]);
       setCurrentBranchName('');
       setIsLoadingProjectGitRepos(false);
@@ -1515,6 +1523,7 @@ export default function GitRepoSelector({
     repoPath: string,
     resolvedConfig?: Config,
     selectedProjectRequestId?: number,
+    projectSettingsKey?: string,
   ) => {
     // Refresh config to ensure we have latest settings?
     // We can just rely on current config state if we assume single user or minimal concurrency.
@@ -1528,11 +1537,13 @@ export default function GitRepoSelector({
     }
     if (!config && currentConfig) setConfig(currentConfig);
 
-    const effectiveSettings = getEffectiveAgentRuntimeSettings(
+    const settingsLookupKey = projectSettingsKey || selectedProjectId || repoPath;
+    const effectiveSettings = getEffectiveProjectAgentRuntimeSettings(
       currentConfig,
-      repoPath,
+      settingsLookupKey,
     );
     const settings = effectiveSettings.projectSettings;
+    hydratedAgentRuntimeRepoRef.current = repoPath;
     setSelectedAgentProvider(effectiveSettings.provider);
     setSelectedAgentModel(effectiveSettings.model);
     setSelectedReasoningEffort(effectiveSettings.reasoningEffort);
@@ -1617,8 +1628,8 @@ export default function GitRepoSelector({
   };
 
   const saveStartupScript = async () => {
-    if (selectedRepo) {
-      const newConfig = await updateProjectSettings(selectedRepo, { startupScript });
+    if (selectedProjectSettingsReference) {
+      const newConfig = await updateProjectSettings(selectedProjectSettingsReference, { startupScript });
       setConfig(newConfig);
     }
   }
@@ -1628,8 +1639,8 @@ export default function GitRepoSelector({
   };
 
   const saveDevServerScriptValue = async (script: string) => {
-    if (selectedRepo) {
-      const newConfig = await updateProjectSettings(selectedRepo, { devServerScript: script });
+    if (selectedProjectSettingsReference) {
+      const newConfig = await updateProjectSettings(selectedProjectSettingsReference, { devServerScript: script });
       setConfig(newConfig);
     }
   };
@@ -2428,10 +2439,11 @@ export default function GitRepoSelector({
   }, [reasoningEffortOptions, selectedAgentProvider, selectedReasoningEffort]);
 
   useEffect(() => {
-    if (mode !== 'new' || !selectedRepo || !config) return;
+    if (mode !== 'new' || !selectedRepo || !config || !selectedProjectSettingsReference) return;
+    if (hydratedAgentRuntimeRepoRef.current !== selectedRepo) return;
 
-    const explicitProjectSettings = config.projectSettings[selectedRepo] || {};
-    const currentSettings = getEffectiveAgentRuntimeSettings(config, selectedRepo);
+    const explicitProjectSettings = config.projectSettings[selectedProjectSettingsReference] || {};
+    const currentSettings = getEffectiveProjectAgentRuntimeSettings(config, selectedProjectSettingsReference);
     const nextReasoning = selectedAgentProvider === 'codex'
       ? normalizeProviderReasoningSelection(selectedAgentProvider, selectedReasoningEffort)
       : undefined;
@@ -2461,7 +2473,7 @@ export default function GitRepoSelector({
     const requestId = agentRuntimeSettingsRequestRef.current + 1;
     agentRuntimeSettingsRequestRef.current = requestId;
 
-    void saveAgentRuntimeSettings(selectedRepo, {
+    void saveAgentRuntimeSettings(selectedProjectSettingsReference, {
       agentProvider: selectedAgentProvider,
       agentModel: selectedAgentModel || undefined,
       agentReasoningEffort: nextReasoning,
@@ -2472,7 +2484,7 @@ export default function GitRepoSelector({
     }).catch((settingsError) => {
       console.error('Failed to persist agent runtime settings:', settingsError);
     });
-  }, [config, mode, reasoningEffortOptions, saveAgentRuntimeSettings, selectedAgentModel, selectedAgentProvider, selectedReasoningEffort, selectedRepo]);
+  }, [config, mode, reasoningEffortOptions, saveAgentRuntimeSettings, selectedAgentModel, selectedAgentProvider, selectedProjectSettingsReference, selectedReasoningEffort, selectedRepo]);
 
   useEffect(() => {
     if (!isWaitingForLogin || !waitingForLoginProvider || !isPageForegrounded) {
@@ -2512,6 +2524,7 @@ export default function GitRepoSelector({
 
   const startSession = async () => {
     if (!selectedRepo) return;
+    const projectSettingsReference = selectedProjectSettingsReference ?? selectedRepo;
     setLoading(true);
     setError(null);
 
@@ -2535,7 +2548,7 @@ export default function GitRepoSelector({
       // Also save startup script if changed
       await saveStartupScript();
       await saveDevServerScriptValue(resolvedDevServerScript);
-      const nextConfig = await updateProjectSettings(selectedRepo, {
+      const nextConfig = await updateProjectSettings(projectSettingsReference, {
         agentProvider: resolvedProvider,
         agentModel: resolvedModel || undefined,
         agentReasoningEffort: resolvedReasoningEffort,
@@ -2631,41 +2644,9 @@ export default function GitRepoSelector({
           return;
         }
 
-        const initialAgentPrompt = buildAgentStartupPrompt({
-          taskDescription: launchInitialMessage || undefined,
-          attachmentPaths: allAttachmentPaths,
-          sessionMode,
-          workspaceMode: wtResult.workspaceMode || 'folder',
-          workspaceFolders: wtResult.workspaceFolders,
-          gitRepos: wtResult.gitRepos,
-          discoveredRepoRelativePaths: projectGitRepos.map((repoPath) => toProjectRelativeRepoPath(selectedRepo, repoPath)),
-        });
-
-        if (initialAgentPrompt) {
-          const messageResponse = await fetch('/api/agent/message', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              sessionId: wtResult.sessionName,
-              message: initialAgentPrompt,
-              displayMessage: initialAgentPrompt,
-              markInitialized: true,
-            }),
-          });
-          const messagePayload = await messageResponse.json().catch(() => null) as { error?: string } | null;
-          if (!messageResponse.ok) {
-            setError(messagePayload?.error || 'Failed to queue initial agent turn');
-            notifySessionsChanged();
-            setLoading(false);
-            return;
-          }
-        }
-
         // 4. Navigate to session page by path only
         notifySessionsChanged();
-        navigateToSession(wtResult.sessionName, { fresh: true });
+        navigateToSession(wtResult.sessionName);
         return;
 
         // No need to refresh sessions as we are navigating away
@@ -3159,6 +3140,7 @@ export default function GitRepoSelector({
           failedQuickCreateDrafts={[]}
           isDarkThemeActive={isDarkThemeActive}
           runningSessionCountByProject={runningSessionCountByProject}
+          latestRunningSessionIdByProject={new Map()}
           draftCountByProject={draftCountByProject}
           projectCardIconByPath={repoCardIconByRepo}
           brokenProjectCardIcons={brokenRepoCardIcons}

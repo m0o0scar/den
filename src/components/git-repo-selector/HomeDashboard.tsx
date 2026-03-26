@@ -21,6 +21,7 @@ export type HomeDashboardProps = {
   filteredRecentProjects: string[];
   isDarkThemeActive: boolean;
   runningSessionCountByProject: Map<string, number>;
+  latestRunningSessionIdByProject: Map<string, string>;
   draftCountByProject: Map<string, number>;
   projectCardIconByPath: Record<string, string | null>;
   brokenProjectCardIcons: Record<string, boolean>;
@@ -61,6 +62,7 @@ export function HomeDashboard({
   filteredRecentProjects,
   isDarkThemeActive,
   runningSessionCountByProject,
+  latestRunningSessionIdByProject,
   draftCountByProject,
   projectCardIconByPath,
   brokenProjectCardIcons,
@@ -269,6 +271,7 @@ export function HomeDashboard({
                 isProjectOpenable={isProjectOpenable(project)}
                 isDarkThemeActive={isDarkThemeActive}
                 runningSessionCount={runningSessionCountByProject.get(project) ?? 0}
+                latestRunningSessionId={latestRunningSessionIdByProject.get(project) ?? null}
                 draftCount={draftCountByProject.get(project) ?? 0}
                 projectIconPath={projectCardIconByPath[project] ?? null}
                 showProjectIcon={!!projectCardIconByPath[project] && !brokenProjectCardIcons[project]}
