@@ -5,6 +5,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { SessionView } from '@/components/SessionView';
 import { SessionMetadata } from '@/app/actions/session';
 import { getSessionPageBootstrap, type SessionPageBootstrapResult } from '@/app/actions/session-page';
+import { DEFAULT_PROJECT_ICON_PATH, getProjectIconUrl } from '@/lib/project-icons';
 import { clearPendingSessionNavigation } from '@/lib/session-navigation';
 
 type SessionNotificationPayload = {
@@ -15,7 +16,7 @@ type SessionNotificationPayload = {
     timestamp: string;
 };
 
-const SESSION_FALLBACK_FAVICON_PATH = '/repo-generic-icon.svg';
+const SESSION_FALLBACK_FAVICON_PATH = DEFAULT_PROJECT_ICON_PATH;
 const APP_DEFAULT_FAVICON_PATH = '/palx-icon.png';
 const SESSION_FAVICON_DATA_ATTR = 'data-viba-session-favicon';
 const MAX_SESSION_BOOTSTRAP_CACHE_SIZE = 20;
@@ -361,7 +362,7 @@ export default function SessionPage() {
                 setIsResume(isFreshNavigation ? false : bootstrap.isResume);
 
                 if (bootstrap.sessionIconPath) {
-                    setSessionFaviconHref(`/api/file-thumbnail?path=${encodeURIComponent(bootstrap.sessionIconPath)}`);
+                    setSessionFaviconHref(getProjectIconUrl(bootstrap.sessionIconPath));
                 } else {
                     setSessionFaviconHref(SESSION_FALLBACK_FAVICON_PATH);
                 }

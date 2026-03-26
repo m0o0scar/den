@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ImagePlus, Plus, Trash2, X } from 'lucide-react';
 import SessionFileBrowser from '@/components/SessionFileBrowser';
 import FileBrowser from '@/components/FileBrowser';
+import { getProjectIconUrl } from '@/lib/project-icons';
 
 export type RepoSettingsDialogProps = {
   isOpen: boolean;
@@ -59,9 +60,7 @@ export function RepoSettingsDialog({
 
   if (!isOpen || !projectId) return null;
 
-  const iconPreviewUrl = projectIconPath
-    ? `/api/file-thumbnail?path=${encodeURIComponent(projectIconPath)}`
-    : null;
+  const iconPreviewUrl = getProjectIconUrl(projectIconPath);
   const iconBrowserInitialPath = projectFolderPaths[0] || projectForSettings || defaultRoot;
 
   return (
@@ -151,13 +150,9 @@ export function RepoSettingsDialog({
           <div className="space-y-2">
             <label className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Project Icon</label>
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-[#1e2532]">
-                {iconPreviewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={iconPreviewUrl} alt="Project icon" className="h-full w-full object-cover" />
-                ) : (
-                  <span className="text-[10px] text-slate-500">No Icon</span>
-                )}
+              <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-white">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={iconPreviewUrl} alt="Project icon" className="h-full w-full object-cover" />
               </div>
               <button
                 type="button"
@@ -181,7 +176,7 @@ export function RepoSettingsDialog({
               )}
             </div>
             <div className="text-xs text-slate-500 dark:text-slate-400">
-              Supported: png, jpg, jpeg, webp, svg, ico. Max 2MB.
+              Supported: png, jpg, jpeg, webp, svg, ico. Max 2MB. Projects without a custom icon use the bundled default icon.
             </div>
           </div>
 

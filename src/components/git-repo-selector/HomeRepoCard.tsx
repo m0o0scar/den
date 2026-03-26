@@ -1,6 +1,7 @@
-import { ChevronRight, FolderGit2, Settings, X, GitBranch as GitBranchIcon } from 'lucide-react';
+import { ChevronRight, Settings, X, GitBranch as GitBranchIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { getBaseName } from '@/lib/path';
+import { getProjectIconUrl } from '@/lib/project-icons';
 import type { HomeProjectGitRepo } from '@/lib/home-project-git';
 import { getStableRepoCardGradient } from '@/lib/repo-card-gradient';
 
@@ -54,9 +55,10 @@ export function HomeRepoCard({
   const cardGradient = getStableRepoCardGradient(normalizePathForComparison(project));
   const [isGitRepoMenuOpen, setIsGitRepoMenuOpen] = useState(false);
   const gitRepoMenuRef = useRef<HTMLDivElement | null>(null);
-  const projectIconUrl = projectIconPath
-    ? `/api/file-thumbnail?path=${encodeURIComponent(projectIconPath)}`
-    : null;
+  const hasCustomProjectIcon = showProjectIcon && !!projectIconPath;
+  const projectIconUrl = hasCustomProjectIcon
+    ? getProjectIconUrl(projectIconPath)
+    : getProjectIconUrl();
   const discoveredProjectGitRepos = projectGitRepos ?? [];
   const hasDiscoveredGitRepos = Array.isArray(projectGitRepos);
   const hasGitRepos = discoveredProjectGitRepos.length > 0;
@@ -104,18 +106,14 @@ export function HomeRepoCard({
         <div className="repo-card-tilt-content relative flex h-full flex-col justify-between p-5">
           <div className="flex items-start gap-4">
               <div className="relative flex shrink-0 items-center">
-                <div className="repo-card-tilt-icon flex h-20 w-20 items-center justify-center rounded-[1.35rem] bg-white/70 text-slate-700 shadow-sm backdrop-blur-sm dark:border dark:border-white/15 dark:bg-white/10 dark:text-slate-200">
-                {showProjectIcon && projectIconUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={projectIconUrl}
-                    alt={`${projectName} icon`}
-                    className="h-14 w-14 rounded-xl object-cover"
-                    onError={() => onProjectIconError(project)}
-                  />
-                ) : (
-                  <FolderGit2 className="h-10 w-10" />
-                )}
+                <div className="repo-card-tilt-icon flex h-20 w-20 items-center justify-center rounded-[1.35rem] bg-white text-slate-700 shadow-sm dark:border dark:border-white/15 dark:bg-white dark:text-slate-200">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={projectIconUrl}
+                  alt={`${projectName} icon`}
+                  className="h-14 w-14 rounded-xl object-cover"
+                  onError={hasCustomProjectIcon ? () => onProjectIconError(project) : undefined}
+                />
               </div>
                 <div className="absolute -right-3 -top-2 z-10 flex gap-1">
                   {draftCount > 0 && (

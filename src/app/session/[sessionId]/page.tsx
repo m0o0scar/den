@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import SessionPageClient from './SessionPageClient';
-import { resolveRepoCardIcon } from '@/app/actions/git';
 import { getLocalDb } from '@/lib/local-db';
+import { DEFAULT_PROJECT_ICON_PATH, getProjectIconUrl } from '@/lib/project-icons';
 import { getProjectById } from '@/lib/store';
 
 type SessionRouteProps = {
@@ -14,7 +14,7 @@ type SessionRouteContext = {
   projectPath?: string;
 };
 
-const SESSION_FALLBACK_FAVICON_PATH = '/repo-generic-icon.svg';
+const SESSION_FALLBACK_FAVICON_PATH = DEFAULT_PROJECT_ICON_PATH;
 
 async function readSessionRouteContext(sessionId: string): Promise<SessionRouteContext> {
   try {
@@ -43,25 +43,12 @@ async function readSessionRouteContext(sessionId: string): Promise<SessionRouteC
   }
 }
 
-async function resolveSessionFavicon(projectId?: string, projectPath?: string): Promise<string> {
+async function resolveSessionFavicon(projectId?: string): Promise<string> {
   if (projectId) {
     const project = getProjectById(projectId);
     if (project?.iconPath) {
-      return `/api/file-thumbnail?path=${encodeURIComponent(project.iconPath)}`;
+      return getProjectIconUrl(project.iconPath);
     }
-  }
-
-  if (!projectPath) {
-    return SESSION_FALLBACK_FAVICON_PATH;
-  }
-
-  try {
-    const iconResolution = await resolveRepoCardIcon(projectPath);
-    if (iconResolution.success && iconResolution.iconPath) {
-      return `/api/file-thumbnail?path=${encodeURIComponent(iconResolution.iconPath)}`;
-    }
-  } catch {
-    // Fall back to a generic icon if resolution fails.
   }
 
   return SESSION_FALLBACK_FAVICON_PATH;
@@ -70,7 +57,7 @@ async function resolveSessionFavicon(projectId?: string, projectPath?: string): 
 export async function generateMetadata({ params }: SessionRouteProps): Promise<Metadata> {
   const { sessionId } = await params;
   const sessionContext = await readSessionRouteContext(sessionId);
-  const sessionFavicon = await resolveSessionFavicon(sessionContext.projectId, sessionContext.projectPath);
+  const sessionFavicon = await resolveSessionFavicon(sessionContext.projectId);
 
   const metadata: Metadata = {
     icons: {
