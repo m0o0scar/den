@@ -20,10 +20,12 @@ describe('session canvas layout helpers', () => {
 
     assert.equal(layout.version, 2);
     assert.equal(layout.explorer.width, SESSION_CANVAS_DEFAULT_EXPLORER_WIDTH);
+    assert.equal(layout.explorer.collapsed, true);
     assert.deepEqual(
       layout.panels.map((panel) => panel.type),
       ['agent-terminal', 'terminal'],
     );
+    assert.equal(layout.panels[1]?.height, 420);
     assert.equal(layout.panelDefaults?.preview?.width, 900);
     assert.equal(layout.panelDefaults?.preview?.height, 600);
     assert.equal(layout.bootstrap.agentStarted, false);

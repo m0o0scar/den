@@ -26,6 +26,7 @@ const SESSION_CANVAS_MIN_PANEL_WIDTH = 320;
 const SESSION_CANVAS_MIN_PANEL_HEIGHT = 220;
 const SESSION_CANVAS_DEFAULT_PREVIEW_WIDTH = 900;
 const SESSION_CANVAS_DEFAULT_PREVIEW_HEIGHT = 600;
+const SESSION_CANVAS_DEFAULT_STARTUP_TERMINAL_HEIGHT = 420;
 
 type CreateDefaultSessionCanvasLayoutOptions = {
   workspacePath: string;
@@ -103,7 +104,7 @@ export function createDefaultSessionCanvasLayout({
       x: 420,
       y: 740,
       width: 760,
-      height: 280,
+      height: SESSION_CANVAS_DEFAULT_STARTUP_TERMINAL_HEIGHT,
       payload: {
         terminalKey: 'terminal',
         role: 'startup',
@@ -119,7 +120,7 @@ export function createDefaultSessionCanvasLayout({
       scale: SESSION_CANVAS_DEFAULT_SCALE,
     },
     explorer: {
-      collapsed: false,
+      collapsed: true,
       width: SESSION_CANVAS_DEFAULT_EXPLORER_WIDTH,
       expandedPaths: [workspacePath],
       selectedPath: null,

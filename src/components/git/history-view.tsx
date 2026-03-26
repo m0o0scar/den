@@ -3482,10 +3482,10 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   const gitPanelClass = APP_PAGE_PANEL_CLASS;
   const gitToolbarClass = gitPanelClass;
   const headerActionButtonClass =
-    "flex h-8 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white/88 px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 max-[1199px]:w-8 max-[1199px]:justify-center max-[1199px]:px-0 dark:border-slate-700 dark:bg-slate-900/88 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100";
+    "flex h-8 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white/88 px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 max-[1399px]:w-8 max-[1399px]:justify-center max-[1399px]:px-0 dark:border-slate-700 dark:bg-slate-900/88 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100";
   const headerIconButtonClass =
     "flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-white/88 text-slate-600 transition-colors hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900/88 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100";
-  const headerActionLabelClass = "max-[1199px]:hidden";
+  const headerActionLabelClass = "max-[1399px]:hidden";
   const headerSelectButtonClass =
     "flex h-8 items-center gap-2 rounded-lg border border-slate-200/90 bg-white/88 px-3 text-sm font-medium text-slate-700 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900/88 dark:text-slate-200 dark:hover:bg-slate-800";
   const branchSelectButtonClass = cn(
