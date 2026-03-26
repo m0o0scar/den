@@ -37,7 +37,7 @@ import {
   saveSessionCanvasLayout,
   type SessionCanvasBootstrapResult,
 } from '@/app/actions/session-canvas';
-import { deleteSession } from '@/app/actions/session';
+import { deleteSessionInBackground } from '@/app/actions/session';
 import { startTtydProcess, terminateTmuxSessionRole } from '@/app/actions/git';
 import {
   buildSessionCanvasTerminalSrc,
@@ -1289,13 +1289,13 @@ export function SessionCanvasWorkspace({
     setIsDeletingSession(true);
 
     try {
-      const result = await deleteSession(sessionId);
+      const result = await deleteSessionInBackground(sessionId);
       if (!result.success) {
         window.alert(result.error || 'Failed to delete session.');
         return;
       }
 
-      router.push('/');
+      router.replace('/');
     } catch (error) {
       console.error('Failed to delete session:', error);
       window.alert('Failed to delete session.');
