@@ -1,10 +1,10 @@
 'use client';
 
-import { cn, getRepoFolderName, getRepositoryDisplayName } from '@/lib/utils';
+import { cn, getRepoFolderName } from '@/lib/utils';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
-import { useGitStatus, useRepository, useUpdateSettings } from '@/hooks/use-git';
+import { useGitStatus, useUpdateSettings } from '@/hooks/use-git';
 
 const SIDEBAR_COLLAPSED_KEY = 'workspace-sidebar-collapsed';
 const SIDEBAR_WIDTH_EXPANDED = 256; // w-64
@@ -19,7 +19,6 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const repoPath = searchParams.get('path') || '';
-  const repository = useRepository(repoPath || null);
   const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
   const [enableTransition, setEnableTransition] = useState(false);
 
@@ -29,9 +28,7 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
   const { data: gitStatus } = useGitStatus(repoPath || null);
   const changesCount = gitStatus?.files?.length ?? 0;
   const currentBranch = gitStatus?.current?.trim();
-  const repoDisplayName = repository
-    ? getRepositoryDisplayName(repository)
-    : (repoPath ? getRepoFolderName(repoPath) : '');
+  const repoDisplayName = repoPath ? getRepoFolderName(repoPath) : '';
 
   // Enable transitions only after initial paint to avoid first-load animation.
   useEffect(() => {
