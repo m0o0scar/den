@@ -283,7 +283,7 @@ export async function getConfig(): Promise<Config> {
       configRow?.default_agent_provider,
       configRow?.default_agent_reasoning_effort,
     ),
-    recentProjects: recentProjectPaths,
+    recentProjects: recentProjectIds,
     recentRepos: recentProjectPaths,
     pinnedFolderShortcuts: pinnedFolderShortcuts.map((entry) => entry.folder_path),
     projectSettings,
@@ -311,10 +311,9 @@ export async function updateConfig(updates: Partial<Config>): Promise<Config> {
   }
 
   const newConfig = normalizeConfig({ ...currentConfig, ...normalizedUpdates });
-  newConfig.recentRepos = newConfig.recentProjects;
   newConfig.repoSettings = newConfig.projectSettings;
   await saveConfig(newConfig);
-  return newConfig;
+  return getConfig();
 }
 
 export async function getProjectAlias(projectId: string): Promise<string | null> {
@@ -349,7 +348,7 @@ export async function updateProjectSettings(projectId: string, updates: Partial<
   };
 
   await saveConfig(newConfig);
-  return newConfig;
+  return getConfig();
 }
 
 export async function getGitRepoCredential(repoPath: string): Promise<string | null> {

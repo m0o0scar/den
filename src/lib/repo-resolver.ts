@@ -129,7 +129,9 @@ export async function resolveRepositoryPathByName(repoName: string): Promise<str
   }
 
   const config = await getConfig();
-  const recentProjects = config.recentProjects ?? config.recentRepos ?? [];
+  const recentProjects = config.recentRepos?.length
+    ? config.recentRepos
+    : (config.recentProjects ?? []);
 
   const recentMatches = recentProjects.filter((repoPath) => hasMatchingName(repoPath, trimmedName));
   for (const repoPath of recentMatches) {

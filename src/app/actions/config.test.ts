@@ -5,11 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 
 type ConfigModule = typeof import('./config.ts');
+type StoreModule = typeof import('../../lib/store.ts');
 
 let tempHome = '';
 let previousHome = '';
 let previousUserProfile = '';
 let configModule: ConfigModule;
+let storeModule: StoreModule;
 
 before(async () => {
   tempHome = await mkdtemp(path.join(os.tmpdir(), 'palx-config-test-'));
@@ -19,6 +21,7 @@ before(async () => {
   process.env.USERPROFILE = tempHome;
 
   configModule = await import('./config.ts');
+  storeModule = await import('../../lib/store.ts');
 });
 
 after(async () => {
@@ -62,6 +65,25 @@ describe('config global agent defaults', () => {
     assert.equal(loaded.defaultAgentProvider, 'codex');
     assert.equal(loaded.defaultAgentModel, 'gpt-5.4');
     assert.equal(loaded.defaultAgentReasoningEffort, 'high');
+  });
+
+  it('keeps recentProjects as project ids while exposing recentRepos as folder paths', async () => {
+    const projectRoot = path.join(tempHome, 'project-a');
+    const project = storeModule.addProject({
+      name: 'Project A',
+      folderPaths: [projectRoot],
+    });
+
+    const updated = await configModule.updateConfig({
+      recentProjects: [project.id],
+    });
+
+    assert.deepEqual(updated.recentProjects, [project.id]);
+    assert.deepEqual(updated.recentRepos, [projectRoot]);
+
+    const loaded = await configModule.getConfig();
+    assert.deepEqual(loaded.recentProjects, [project.id]);
+    assert.deepEqual(loaded.recentRepos, [projectRoot]);
   });
 
   it('normalizes default reasoning by provider', async () => {

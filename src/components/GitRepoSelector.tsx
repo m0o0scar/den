@@ -993,7 +993,8 @@ export default function GitRepoSelector({
       if (!config) {
         setConfig(currentConfig);
       }
-      let newRecent = [...currentConfig.recentProjects];
+      const currentRecentProjects = currentConfig.recentRepos ?? currentConfig.recentProjects;
+      let newRecent = [...currentRecentProjects];
       if (!newRecent.includes(path)) {
         newRecent.unshift(path);
       } else {
@@ -1001,9 +1002,9 @@ export default function GitRepoSelector({
         newRecent = [path, ...newRecent.filter(r => r !== path)];
       }
 
-      const nextConfig = arePathListsEqual(newRecent, currentConfig.recentProjects)
+      const nextConfig = arePathListsEqual(newRecent, currentRecentProjects)
         ? currentConfig
-        : await updateConfig({ recentProjects: newRecent });
+        : await updateConfig({ recentRepos: newRecent });
       if (
         selectedProjectRequestId !== undefined
         && !isActiveSelectedProjectLoad(selectedProjectRequestId)
@@ -1955,8 +1956,9 @@ export default function GitRepoSelector({
   const handleRemoveRecent = async (e: React.MouseEvent, repo: string) => {
     e.stopPropagation();
     if (config) {
-      const newRecent = config.recentProjects.filter((project) => project !== repo);
-      const newConfig = await updateConfig({ recentProjects: newRecent });
+      const currentRecentProjects = config.recentRepos ?? config.recentProjects;
+      const newRecent = currentRecentProjects.filter((project) => project !== repo);
+      const newConfig = await updateConfig({ recentRepos: newRecent });
       setConfig(newConfig);
     }
   };
@@ -2873,7 +2875,10 @@ export default function GitRepoSelector({
     return counts;
   }, [allDrafts]);
 
-  const recentProjects = useMemo(() => config?.recentProjects ?? [], [config?.recentProjects]);
+  const recentProjects = useMemo(
+    () => config?.recentRepos ?? config?.recentProjects ?? [],
+    [config?.recentProjects, config?.recentRepos],
+  );
 
   const getProjectDisplayName = useCallback((projectPath: string): string => {
     const alias = config?.projectSettings?.[projectPath]?.alias?.trim();
