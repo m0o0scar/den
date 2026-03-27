@@ -1,5 +1,5 @@
-import type { Metadata, Viewport } from 'next';
-import SessionCanvasPageClient from './canvas/SessionCanvasPageClient';
+import type { Metadata } from 'next';
+import SessionPageClient from './SessionPageClient';
 import { getLocalDb } from '@/lib/local-db';
 import { DEFAULT_PROJECT_ICON_PATH, getProjectIconUrl } from '@/lib/project-icons';
 import { getProjectById } from '@/lib/store';
@@ -72,13 +72,6 @@ export async function generateMetadata({ params }: SessionRouteProps): Promise<M
   return metadata;
 }
 
-export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-};
-
 export default function SessionPage() {
-  return <SessionCanvasPageClient />;
+  return <SessionPageClient />;
 }

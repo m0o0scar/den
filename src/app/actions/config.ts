@@ -102,30 +102,6 @@ function normalizeProjectSettings(settings: ProjectSettings): ProjectSettings {
   };
 }
 
-function mergeProjectSettings(
-  currentSettings: ProjectSettings,
-  updates: Partial<ProjectSettings>,
-): ProjectSettings {
-  const mergedSettings: ProjectSettings = { ...currentSettings };
-  const mutableMergedSettings = mergedSettings as Record<
-    keyof ProjectSettings,
-    ProjectSettings[keyof ProjectSettings] | undefined
-  >;
-
-  for (const [key, value] of Object.entries(updates) as Array<[
-    keyof ProjectSettings,
-    ProjectSettings[keyof ProjectSettings],
-  ]>) {
-    if (value === undefined) {
-      delete mergedSettings[key];
-      continue;
-    }
-    mutableMergedSettings[key] = value;
-  }
-
-  return normalizeProjectSettings(mergedSettings);
-}
-
 function normalizeConfig(config: Config): Config {
   const normalizedDefaultAgentProvider = config.defaultAgentProvider;
   return {
@@ -358,18 +334,17 @@ export async function updateProjectSettings(projectId: string, updates: Partial<
   }
   const currentConfig = await getConfig();
   const currentProjectSettings = currentConfig.projectSettings[resolvedProjectId] || currentConfig.projectSettings[projectId] || {};
-  const nextProjectSettings = mergeProjectSettings(currentProjectSettings, updates);
-  const compatibilityKeys = getProjectCompatibilityKeys(resolvedProjectId);
-  const nextProjectSettingsMap = {
-    ...currentConfig.projectSettings,
-  };
-  for (const compatibilityKey of compatibilityKeys) {
-    nextProjectSettingsMap[compatibilityKey] = nextProjectSettings;
-  }
+  const nextProjectSettings = normalizeProjectSettings({
+    ...currentProjectSettings,
+    ...updates,
+  });
 
   const newConfig: Config = {
     ...currentConfig,
-    projectSettings: nextProjectSettingsMap,
+    projectSettings: {
+      ...currentConfig.projectSettings,
+      [resolvedProjectId]: nextProjectSettings,
+    },
   };
 
   await saveConfig(newConfig);

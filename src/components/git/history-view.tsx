@@ -21,7 +21,6 @@ import { GroupedDiffViewer } from './grouped-diff-viewer';
 import { ImageDiffView } from './image-diff-view';
 import { useEscapeDismiss } from '@/hooks/use-escape-dismiss';
 import { toast } from '@/hooks/use-toast';
-import { APP_PAGE_PANEL_CLASS } from '@/components/app-shell/AppPageSurface';
 import { BranchTreeNode, VisibilityMap, buildBranchTree, buildRemoteBranchTree, getEffectiveVisibility, collectAllBranchRefs, collectVisibleBranchRefs } from './branch-tree-utils';
 import { GroupHeader } from './group-header';
 import { BranchMenuOptions, BranchOperation, buildBranchContextMenuItems } from './branch-context-menu';
@@ -457,8 +456,6 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   const [sessionsForRepo, setSessionsForRepo] = useState<SessionMetadata[]>([]);
   const [isBranchPopoverOpen, setIsBranchPopoverOpen] = useState(false);
   const branchPopoverRef = useRef<HTMLDivElement>(null);
-  const [isCredentialMenuOpen, setIsCredentialMenuOpen] = useState(false);
-  const credentialPopoverRef = useRef<HTMLDivElement>(null);
 
   const closeRenameBranchDialog = useCallback(() => {
     setIsRenameOpen(false);
@@ -940,22 +937,6 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     };
   }, [isBranchPopoverOpen]);
 
-  useEffect(() => {
-    if (!isCredentialMenuOpen) return;
-
-    const handleMouseDown = (event: MouseEvent) => {
-      if (credentialPopoverRef.current && !credentialPopoverRef.current.contains(event.target as Node)) {
-        setIsCredentialMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleMouseDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handleMouseDown);
-    };
-  }, [isCredentialMenuOpen]);
-
   // Build branch trees for local and remote branches
   const localBranchTree = useMemo(() => {
     if (!branchData?.branches) return null;
@@ -1120,7 +1101,6 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
       });
     } finally {
       setIsSavingRepoCredential(false);
-      setIsCredentialMenuOpen(false);
     }
   }, [repoCredentialSelection, repoPath]);
 
@@ -3183,8 +3163,8 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   const worktrees = branchData?.worktrees ?? [];
 
   const branchTreePopoverContent = (
-    <div className="flex w-[22rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[20px] border border-slate-200/70 bg-white/96 shadow-[0_18px_36px_-24px_rgba(15,23,42,0.42)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/96 dark:shadow-[0_20px_42px_-26px_rgba(2,6,23,0.84)]">
-      <div className="flex h-[57px] shrink-0 items-center justify-between border-b border-slate-200/70 bg-white/96 px-4 dark:border-slate-800 dark:bg-slate-950/96">
+    <div className="w-[22rem] max-w-[calc(100vw-2rem)] flex flex-col border border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] rounded-box shadow-xl overflow-hidden">
+      <div className="px-4 border-b border-gray-200 dark:border-[#30363d] flex items-center justify-between bg-white dark:bg-[#161b22] h-[57px] shrink-0">
         <h3 className="font-semibold flex items-center gap-2">Branches</h3>
         <div className="flex items-center gap-1">
           {hasVisibilityFilters && (
@@ -3479,35 +3459,14 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
 
   if (!log) return <div className="flex items-center justify-center p-8 h-full opacity-70">No history data available</div>;
 
-  const gitPanelClass = APP_PAGE_PANEL_CLASS;
-  const gitToolbarClass = gitPanelClass;
   const headerActionButtonClass =
-    "flex h-8 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white/88 px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 max-[1399px]:w-8 max-[1399px]:justify-center max-[1399px]:px-0 dark:border-slate-700 dark:bg-slate-900/88 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100";
-  const headerIconButtonClass =
-    "flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200/90 bg-white/88 text-slate-600 transition-colors hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900/88 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100";
-  const headerActionLabelClass = "max-[1399px]:hidden";
-  const headerSelectButtonClass =
-    "flex h-8 items-center gap-2 rounded-lg border border-slate-200/90 bg-white/88 px-3 text-sm font-medium text-slate-700 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900/88 dark:text-slate-200 dark:hover:bg-slate-800";
-  const branchSelectButtonClass = cn(
-    headerSelectButtonClass,
-    "max-w-[24rem] font-mono",
-  );
-  const credentialSelectButtonClass = cn(
-    headerSelectButtonClass,
-    "max-w-[20rem]",
-  );
-  const selectedRepoCredentialLabel = repoCredentialSelection === 'auto'
-    ? 'Auto (remote-based)'
-    : formatRepoCredentialOptionLabel(
-      credentialOptions.find((credential) => credential.id === repoCredentialSelection) ?? {
-        id: repoCredentialSelection,
-        type: 'github',
-        username: 'Credential',
-      },
-    );
+    "flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 max-[1199px]:w-8 max-[1199px]:justify-center max-[1199px]:px-0 dark:border-[#30363d] dark:bg-[#161b22] dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100";
+  const headerActionLabelClass = "max-[1199px]:hidden";
+  const branchSelectButtonClass =
+    "flex h-8 max-w-[24rem] items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-mono font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#30363d] dark:bg-[#161b22] dark:text-slate-200 dark:hover:bg-slate-800";
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       {isResetOpen && (
         <dialog className="modal modal-open">
           <div className="modal-box">
@@ -4632,8 +4591,8 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
       )}
 
       {/* Main Content */}
-      <div className="flex min-h-0 flex-1 min-w-0 flex-col gap-3 overflow-hidden">
-        <div className={`relative z-20 flex min-h-[57px] shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-2.5 ${gitToolbarClass}`}>
+      <div className="flex-1 flex min-w-0 flex-col gap-2 overflow-hidden">
+        <div className="flex min-h-[57px] shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 dark:border-[#30363d] dark:bg-[#161b22]">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <h1 className="font-bold text-lg text-slate-900 dark:text-slate-100">History</h1>
           </div>
@@ -4707,99 +4666,63 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 <span className={headerActionLabelClass}>Push</span>
               </button>
             </div>
-            <div className="relative shrink-0" ref={credentialPopoverRef}>
-              <button
-                type="button"
-                className={credentialSelectButtonClass}
-                onClick={() => setIsCredentialMenuOpen((previous) => !previous)}
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 dark:border-[#30363d] dark:bg-[#0d1117]">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Credential
+              </span>
+              <select
+                className="h-7 min-w-[210px] max-w-[300px] rounded border border-slate-200 bg-white px-2 text-xs text-slate-700 dark:border-[#30363d] dark:bg-[#161b22] dark:text-slate-200"
+                value={repoCredentialSelection}
+                onChange={(event) => {
+                  void handleRepoCredentialSelectionChange(event.target.value);
+                }}
                 disabled={isLoadingRepoCredential || isSavingRepoCredential}
-                title={selectedRepoCredentialLabel}
-                aria-label={`Repository credential: ${selectedRepoCredentialLabel}`}
-                aria-haspopup="menu"
-                aria-expanded={isCredentialMenuOpen}
+                title="Select a credential override for this repository"
               >
-                <span className="truncate">{selectedRepoCredentialLabel}</span>
-                {(isLoadingRepoCredential || isSavingRepoCredential) ? (
-                  <span className="loading loading-spinner loading-xs shrink-0"></span>
-                ) : (
-                  <i
-                    className={cn(
-                      "iconoir-nav-arrow-down shrink-0 text-[16px] transition-transform opacity-60",
-                      isCredentialMenuOpen && "rotate-180",
-                    )}
-                    aria-hidden="true"
-                  />
-                )}
-              </button>
-              {isCredentialMenuOpen && (
-                <div className="absolute right-0 top-full z-50 mt-2 flex w-[20rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[20px] border border-slate-200/70 bg-white/96 shadow-[0_18px_36px_-24px_rgba(15,23,42,0.42)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/96 dark:shadow-[0_20px_42px_-26px_rgba(2,6,23,0.84)]">
-                  <div className="flex h-[57px] shrink-0 items-center border-b border-slate-200/70 bg-white/96 px-4 dark:border-slate-800 dark:bg-slate-950/96">
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Credential</h3>
-                  </div>
-                  <div className="max-h-[320px] overflow-auto p-2">
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-                      onClick={() => {
-                        void handleRepoCredentialSelectionChange('auto');
-                      }}
-                    >
-                      <span className="truncate">Auto (remote-based)</span>
-                      <span className={cn("text-sm", repoCredentialSelection === 'auto' ? 'opacity-100' : 'opacity-0')}>✓</span>
-                    </button>
-                    {credentialOptions.map((credential) => {
-                      const isSelected = repoCredentialSelection === credential.id;
-                      return (
-                        <button
-                          key={credential.id}
-                          type="button"
-                          className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-                          onClick={() => {
-                            void handleRepoCredentialSelectionChange(credential.id);
-                          }}
-                        >
-                          <span className="truncate">{formatRepoCredentialOptionLabel(credential)}</span>
-                          <span className={cn("text-sm", isSelected ? 'opacity-100' : 'opacity-0')}>✓</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                <option value="auto">Auto (remote-based)</option>
+                {credentialOptions.map((credential) => (
+                  <option key={credential.id} value={credential.id}>
+                    {formatRepoCredentialOptionLabel(credential)}
+                  </option>
+                ))}
+              </select>
+              {(isLoadingRepoCredential || isSavingRepoCredential) && (
+                <span className="loading loading-spinner loading-xs"></span>
               )}
             </div>
-            <div className="h-5 w-px bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
+            <div className="h-5 w-px bg-slate-200 dark:bg-[#30363d]" aria-hidden="true" />
             <div className="flex flex-wrap items-center gap-2">
               <button
-                className={headerIconButtonClass}
+                className={headerActionButtonClass}
                 onClick={() => void handleOpenRepoTerminal()}
                 disabled={isOpeningRepoTerminal}
                 title="Open terminal in repository folder"
-                aria-label="Open terminal in repository folder"
               >
                 {isOpeningRepoTerminal ? (
                   <span className="loading loading-spinner loading-xs"></span>
                 ) : (
                   <i className="iconoir-terminal text-[16px]" aria-hidden="true" />
                 )}
+                <span className={headerActionLabelClass}>Open Terminal</span>
               </button>
-              <button
-                className={headerIconButtonClass}
-                onClick={() => void handleOpenRepoFolder()}
-                disabled={isOpeningRepoFolder}
-                title="Open repository folder"
-                aria-label="Open repository folder"
-              >
+                <button
+                  className={headerActionButtonClass}
+                  onClick={() => void handleOpenRepoFolder()}
+                  disabled={isOpeningRepoFolder}
+                  title="Open repository folder"
+                >
                 {isOpeningRepoFolder ? (
                   <span className="loading loading-spinner loading-xs"></span>
                 ) : (
                   <i className="iconoir-folder text-[16px]" aria-hidden="true" />
                 )}
+                <span className={headerActionLabelClass}>Open Repo Folder</span>
               </button>
             </div>
           </div>
         </div>
 
-        <div className={`relative z-0 flex-1 overflow-hidden ${gitPanelClass}`}>
+        <div className="relative flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#30363d] dark:bg-[#161b22]">
           {/* Show loading spinner while branches are loading if visibility filters are set */}
           {hasVisibilityFilters && isBranchesLoading ? (
             <div className="flex items-center justify-center h-full">
@@ -4836,7 +4759,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
 
         {selectedHash && (
           <div
-            className={`flex flex-col overflow-hidden ${gitPanelClass}`}
+            className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#30363d] dark:bg-[#161b22]"
             style={{ height: panelHeight }}
           >
             {/* Resize handle */}
@@ -4851,7 +4774,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             </div>
 
             {/* Header with commit info */}
-            <div className="flex shrink-0 flex-row items-center justify-between gap-4 border-b border-slate-200/70 bg-white/30 px-4 py-2 dark:border-slate-800 dark:bg-slate-950/30">
+            <div className="flex flex-row items-center py-2 px-4 border-b border-slate-200 dark:border-[#30363d] bg-slate-50/70 dark:bg-[#161b22] shrink-0 justify-between gap-4">
               <div className="flex items-center gap-4 flex-1 min-w-0">
                 {isCommitRangeSelection && selectedCommitRange ? (
                   <>
@@ -4890,8 +4813,8 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             </div>
 
             {activeCommitDetailsRange ? (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent">
-                <div className="shrink-0 border-b border-slate-200/70 bg-white/20 px-4 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wider opacity-60 dark:border-slate-800 dark:bg-slate-950/20">
+              <div className="flex-1 overflow-hidden min-h-0 flex flex-col bg-white dark:bg-[#161b22]">
+                <div className="px-4 pt-2 pb-1 text-[10px] uppercase tracking-wider font-bold opacity-60 border-b border-slate-200 dark:border-[#30363d] bg-slate-50/70 dark:bg-[#161b22] shrink-0">
                   Changes
                 </div>
                 <div className="flex-1 min-h-0">
@@ -4906,12 +4829,12 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
               /* Combined commit message and changes content */
               <div
                 ref={commitDetailsContentRef}
-                className="grid flex-1 overflow-hidden bg-transparent"
+                className="flex-1 overflow-hidden bg-white dark:bg-[#161b22] grid"
                 style={{
                   gridTemplateRows: `${commitDetailsMessageRatio}fr 6px ${1 - commitDetailsMessageRatio}fr`,
                 }}
               >
-                <div className="flex min-h-0 flex-col border-b border-slate-200/70 bg-transparent dark:border-slate-800">
+                <div className="border-b border-slate-200 dark:border-[#30363d] bg-white dark:bg-[#161b22] min-h-0 flex flex-col">
                   <div className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-wider font-bold opacity-60">
                     Message
                   </div>
@@ -4936,8 +4859,8 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 >
                   <div className="w-8 h-1 rounded-full bg-base-300" />
                 </div>
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                  <div className="shrink-0 border-b border-slate-200/70 bg-white/20 px-4 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wider opacity-60 dark:border-slate-800 dark:bg-slate-950/20">
+                <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
+                  <div className="px-4 pt-2 pb-1 text-[10px] uppercase tracking-wider font-bold opacity-60 border-b border-slate-200 dark:border-[#30363d] bg-slate-50/70 dark:bg-[#161b22] shrink-0">
                     Changes
                   </div>
                   <div className="flex-1 min-h-0">

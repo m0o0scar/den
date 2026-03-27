@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { AppPageSurface } from '@/components/app-shell/AppPageSurface';
 import NewSessionComposer from '@/components/NewSessionComposer';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -170,15 +169,13 @@ export default async function NewSessionPage({
   const projectPath = resolveProjectParamToPath(projectIdFromParam ?? projectPathFromParam);
 
   return (
-    <AppPageSurface contentClassName="flex min-h-screen flex-col items-center p-4 md:p-6">
-      <main className="flex w-full flex-col items-center">
-        <NewSessionComposer
-          projectPath={projectPath ?? null}
-          fromRepoName={fromName ?? null}
-          prefillFromSession={prefillFromSession ?? null}
-          predefinedPrompts={predefinedPrompts}
-        />
-      </main>
-    </AppPageSurface>
+    <main className="flex min-h-screen flex-col items-center bg-[#f6f6f8] p-4 md:p-8 dark:bg-[#0d1117]">
+      <NewSessionComposer
+        projectPath={projectPath ?? null}
+        fromRepoName={fromName ?? null}
+        prefillFromSession={prefillFromSession ?? null}
+        predefinedPrompts={predefinedPrompts}
+      />
+    </main>
   );
 }
