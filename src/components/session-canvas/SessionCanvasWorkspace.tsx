@@ -28,12 +28,12 @@ import {
   GitBranch,
   Monitor,
   PanelLeft,
+  Plus,
   RefreshCw,
   ScanSearch,
   Search,
   TerminalSquare,
   Trash2,
-  X,
 } from 'lucide-react';
 
 import {
@@ -578,7 +578,6 @@ function PreviewPanel({
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [inputUrl, setInputUrl] = useState(panel.payload.url || '');
   const [proxyUrl, setProxyUrl] = useState('');
-  const [iframeEpoch, setIframeEpoch] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const loadPreview = useCallback(async (rawUrl: string) => {
@@ -604,7 +603,6 @@ function PreviewPanel({
       }
 
       setProxyUrl(payload.proxyUrl);
-      setIframeEpoch((current) => current + 1);
       onPanelChange({
         title: buildPreviewPanelTitle(normalized),
         payload: {
@@ -617,17 +615,6 @@ function PreviewPanel({
       setError(loadError instanceof Error ? loadError.message : 'Failed to load preview');
     }
   }, [onPanelChange, panel.payload]);
-
-  useEffect(() => {
-    const normalized = panel.payload.url?.trim() || '';
-    setInputUrl((current) => (current === normalized ? current : normalized));
-
-    if (!normalized) {
-      setProxyUrl('');
-      setError(null);
-      setIframeEpoch(0);
-    }
-  }, [panel.payload.url]);
 
   useEffect(() => {
     const normalized = panel.payload.url?.trim();
@@ -671,17 +658,11 @@ function PreviewPanel({
     };
   }, [onPanelChange, panel.payload]);
 
-  const postNavigationMessage = useCallback((action: 'back' | 'forward') => {
+  const postNavigationMessage = useCallback((action: 'back' | 'forward' | 'reload') => {
     const previewWindow = iframeRef.current?.contentWindow;
     if (!previewWindow) return;
     previewWindow.postMessage({ type: 'viba:preview-navigation', action }, '*');
   }, []);
-
-  const handleReload = useCallback(() => {
-    const nextUrl = panel.payload.url || inputUrl || '';
-    if (!nextUrl) return;
-    void loadPreview(nextUrl);
-  }, [inputUrl, loadPreview, panel.payload.url]);
 
   const handleSubmit = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -700,7 +681,7 @@ function PreviewPanel({
         <button type="button" className="btn btn-ghost btn-xs btn-square" onClick={() => postNavigationMessage('forward')}>
           <ArrowRight className="h-3.5 w-3.5" />
         </button>
-        <button type="button" className="btn btn-ghost btn-xs btn-square" onClick={handleReload}>
+        <button type="button" className="btn btn-ghost btn-xs btn-square" onClick={() => postNavigationMessage('reload')}>
           <RefreshCw className="h-3.5 w-3.5" />
         </button>
         <input
@@ -732,7 +713,6 @@ function PreviewPanel({
         </div>
       ) : proxyUrl ? (
         <iframe
-          key={`${proxyUrl}:${iframeEpoch}`}
           ref={iframeRef}
           src={proxyUrl}
           className="h-full w-full border-0"
@@ -2103,24 +2083,16 @@ export function SessionCanvasWorkspace({
           className="btn btn-ghost btn-xs btn-square h-6 min-h-6 w-6 text-slate-500 hover:bg-slate-200 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
           onClick={(event) => {
             event.stopPropagation();
-            updatePanel(panel.id, {
-              title: 'Preview',
-              payload: {
-                ...panel.payload,
-                url: '',
-              },
-            });
+            focusPanel(panel.id);
           }}
-          title="Unload preview"
-          aria-label="Unload preview"
         >
-          <X className="h-3.5 w-3.5" />
+          <Plus className="h-3.5 w-3.5" />
         </button>
       );
     }
 
     return null;
-  }, [handleOpenAgentFileBrowser, isAgentFileInsertPending, panelHeaderButtonClass, updatePanel]);
+  }, [focusPanel, handleOpenAgentFileBrowser, isAgentFileInsertPending, panelHeaderButtonClass]);
 
   return (
     <div
