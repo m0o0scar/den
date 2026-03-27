@@ -1,11 +1,10 @@
 'use client';
 
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { getHomeDirectory, listPathEntries } from '@/app/actions/git';
+import { getHomeDirectory, listPathEntries, saveAttachments } from '@/app/actions/git';
 import { getConfig, updateConfig } from '@/app/actions/config';
 import { ArrowLeft, Clipboard, FileText, Folder, Grid2x2, House, List, Pin, PinOff } from 'lucide-react';
 import { getBaseName, getDirName } from '@/lib/path';
-import { uploadAttachments } from '@/lib/upload-attachments';
 import { useDialogKeyboardShortcuts } from '@/hooks/useDialogKeyboardShortcuts';
 
 const DEFAULT_VIEW_MODE_STORAGE_KEY = 'viba:session-file-browser:view-mode';
@@ -35,8 +34,11 @@ const ThumbnailPreview = memo(function ThumbnailPreview({
   isThumbnailBroken,
   onThumbnailError,
 }: Pick<GridFileTileProps, 'item' | 'isImage' | 'isThumbnailBroken' | 'onThumbnailError'>) {
-  const [loadedPath, setLoadedPath] = useState<string | null>(null);
-  const hasLoaded = loadedPath === item.path;
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  useEffect(() => {
+    setHasLoaded(false);
+  }, [item.path]);
 
   if (isImage && !isThumbnailBroken) {
     return (
@@ -50,7 +52,7 @@ const ThumbnailPreview = memo(function ThumbnailPreview({
           loading="lazy"
           decoding="async"
           className={`absolute inset-0 h-full w-full object-contain p-2 transition-opacity ${hasLoaded ? 'opacity-100' : 'opacity-0'}`}
-          onLoad={() => setLoadedPath(item.path)}
+          onLoad={() => setHasLoaded(true)}
           onError={onThumbnailError}
         />
       </>
@@ -406,7 +408,7 @@ export default function SessionFileBrowser({
       }
 
       if (hasFiles) {
-        const savedPaths = await uploadAttachments(worktreePath, formData);
+        const savedPaths = await saveAttachments(worktreePath, formData);
         if (savedPaths && savedPaths.length > 0) {
           // Determine what to do with saved paths.
           // Option 1: auto-insert them (call onConfirm).
