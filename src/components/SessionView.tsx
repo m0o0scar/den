@@ -38,7 +38,7 @@ import { sanitizeBranchName } from '@/lib/utils';
 import { useAppDialog } from '@/hooks/use-app-dialog';
 import { useTerminalLink, type TerminalWindow } from '@/hooks/useTerminalLink';
 import { inferPreviewUrlFromTerminalText, terminalTranscriptContainsCommand } from '@/lib/dev-server-terminal';
-import { buildPreviewReloadUrl, shouldForcePreviewRemount } from '@/lib/session-preview';
+import { resolvePreviewIframeUrl } from '@/lib/session-preview';
 import { buildShellExportEnvironmentCommand, buildShellSetDirectoryCommand } from '@/lib/shell';
 import { SESSION_MOBILE_VIEWPORT_QUERY } from '@/lib/responsive';
 import {
@@ -769,6 +769,7 @@ export function SessionView({
     const [isSessionPageForegrounded, setIsSessionPageForegrounded] = useState<boolean>(() => readIsDocumentForegrounded());
     const pendingDevServerPreviewLoadRef = useRef(false);
     const attemptedPreviewRestoreRef = useRef(false);
+    const lastRequestedPreviewTargetUrlRef = useRef('');
     const floatingTerminalEnvironments = useMemo(
         () => parseTerminalSessionEnvironmentsFromSrc(floatingTerminalSrc),
         [floatingTerminalSrc],
@@ -2077,6 +2078,8 @@ export function SessionView({
             setFeedback('Please enter a preview URL');
             return false;
         }
+        const previousRequestedTargetUrl = lastRequestedPreviewTargetUrlRef.current;
+        lastRequestedPreviewTargetUrlRef.current = normalized;
 
         setPreviewInputUrl(normalized);
         setFeedback(`Loading preview: ${normalized}`);
@@ -2095,9 +2098,12 @@ export function SessionView({
                 throw new Error(payload?.error || 'Failed to start preview proxy');
             }
 
-            setPreviewUrl(shouldForcePreviewRemount(previewUrl, payload.proxyUrl)
-                ? buildPreviewReloadUrl(payload.proxyUrl)
-                : payload.proxyUrl);
+            setPreviewUrl((currentPreviewUrl) => resolvePreviewIframeUrl({
+                currentPreviewUrl,
+                currentTargetUrl: previousRequestedTargetUrl,
+                nextPreviewUrl: payload.proxyUrl,
+                nextTargetUrl: normalized,
+            }));
             setLoadedPreviewTargetUrl(normalized);
             persistPreviewTargetUrl(normalized);
             if (openPreview) {
@@ -2111,7 +2117,7 @@ export function SessionView({
             setFeedback(`Failed to load preview: ${message}`);
             return false;
         }
-    }, [persistPreviewTargetUrl, previewUrl]);
+    }, [persistPreviewTargetUrl]);
 
     const postPreviewControlMessage = useCallback((payload: { action?: PreviewNavigationAction; type: string }) => {
         const previewWindow = previewIframeRef.current?.contentWindow;
@@ -2154,6 +2160,7 @@ export function SessionView({
         }
 
         setPreviewUrl('');
+        lastRequestedPreviewTargetUrlRef.current = '';
         setFeedback('Preview unloaded');
     }, [previewUrl]);
 
