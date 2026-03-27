@@ -218,7 +218,7 @@ export function QuickCreateTaskDialog({
         }}
       >
         <div className="flex w-full flex-col border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#151b26] max-[1023px]:h-[100dvh] max-[1023px]:w-screen max-[1023px]:min-w-full max-[1023px]:max-w-none max-[1023px]:rounded-none max-[1023px]:border-x-0 max-[1023px]:border-y-0 max-[1023px]:shadow-none min-[1024px]:h-[min(760px,92vh)] min-[1024px]:max-w-3xl min-[1024px]:rounded-2xl">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 max-[1023px]:px-4 max-[1023px]:pb-3 max-[1023px]:pt-[max(1rem,env(safe-area-inset-top))] min-[1024px]:px-5 min-[1024px]:py-4">
+          <div className="mx-auto flex w-full items-center justify-between border-b border-slate-100 dark:border-white/10 max-[1023px]:max-w-[42rem] max-[1023px]:px-5 max-[1023px]:pb-3 max-[1023px]:pt-[max(1rem,env(safe-area-inset-top))] min-[1024px]:max-w-none min-[1024px]:px-5 min-[1024px]:py-4">
             <div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">
                 {draft ? 'Retry Quick Create Task' : 'Create Task'}
@@ -237,7 +237,7 @@ export function QuickCreateTaskDialog({
             </button>
           </div>
 
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto max-[1023px]:px-4 max-[1023px]:py-4 min-[1024px]:p-5">
+          <div className="mx-auto flex w-full flex-1 flex-col gap-4 overflow-y-auto max-[1023px]:max-w-[42rem] max-[1023px]:px-5 max-[1023px]:py-5 min-[1024px]:max-w-none min-[1024px]:p-5">
             {error ? (
               <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200">
                 {error}
@@ -343,7 +343,7 @@ export function QuickCreateTaskDialog({
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-slate-100 dark:border-white/10 max-[1023px]:px-4 max-[1023px]:pb-[max(1rem,env(safe-area-inset-bottom))] max-[1023px]:pt-4 min-[1024px]:px-5 min-[1024px]:py-4">
+          <div className="mx-auto flex w-full items-center justify-end gap-3 border-t border-slate-100 dark:border-white/10 max-[1023px]:max-w-[42rem] max-[1023px]:px-5 max-[1023px]:pb-[max(1rem,env(safe-area-inset-bottom))] max-[1023px]:pt-4 min-[1024px]:max-w-none min-[1024px]:px-5 min-[1024px]:py-4">
             <button
               type="button"
               className="btn btn-ghost"
