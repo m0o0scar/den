@@ -27,6 +27,10 @@ import {
   normalizeSessionCanvasLayout,
 } from '@/lib/session-canvas';
 import { isPathWithinDirectory } from '@/lib/session-canvas-files';
+import {
+  searchSessionCanvasWorkspaceEntries,
+  type SessionCanvasWorkspaceSearchResult,
+} from '@/lib/session-canvas-search';
 import { resolveSessionTerminalRepoPaths } from '@/lib/session-terminal-repos';
 import { buildShellSetDirectoryCommand } from '@/lib/shell';
 import { getProjectById } from '@/lib/store';
@@ -116,6 +120,16 @@ export type SessionCanvasFileReadResult =
         | 'binary'
         | 'too-large'
         | 'read-failed';
+    };
+
+export type SessionCanvasWorkspaceSearchActionResult =
+  | {
+      success: true;
+      results: SessionCanvasWorkspaceSearchResult[];
+    }
+  | {
+      success: false;
+      error: string;
     };
 
 type ParsedLaunchContext = {
@@ -523,5 +537,22 @@ export async function readSessionCanvasFile(
       error: getErrorMessage(error),
       code: 'read-failed',
     };
+  }
+}
+
+export async function searchSessionCanvasWorkspace(
+  sessionId: string,
+  query: string,
+): Promise<SessionCanvasWorkspaceSearchActionResult> {
+  try {
+    const metadata = await getSessionMetadata(sessionId);
+    if (!metadata) {
+      return { success: false, error: 'Session not found' };
+    }
+
+    const results = await searchSessionCanvasWorkspaceEntries(metadata.workspacePath, query);
+    return { success: true, results };
+  } catch (error) {
+    return { success: false, error: getErrorMessage(error) };
   }
 }
