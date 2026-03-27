@@ -102,4 +102,34 @@ describe('config global agent defaults', () => {
     assert.equal(codexConfig.defaultAgentProvider, 'codex');
     assert.equal(codexConfig.defaultAgentReasoningEffort, 'low');
   });
+
+  it('merges concurrent project setting updates without losing fields', async () => {
+    const projectRoot = path.join(tempHome, 'project-concurrent');
+    const project = storeModule.addProject({
+      name: 'Concurrent Project',
+      folderPaths: [projectRoot],
+    });
+
+    await Promise.all([
+      configModule.updateProjectSettings(project.id, {
+        startupScript: 'npm install',
+        devServerScript: 'npm run dev',
+      }),
+      configModule.updateProjectSettings(project.id, {
+        agentProvider: 'codex',
+        agentModel: 'gpt-5.4',
+        agentReasoningEffort: 'high',
+      }),
+    ]);
+
+    const loaded = await configModule.getConfig();
+    const settings = loaded.projectSettings[project.id];
+
+    assert.ok(settings);
+    assert.equal(settings.startupScript, 'npm install');
+    assert.equal(settings.devServerScript, 'npm run dev');
+    assert.equal(settings.agentProvider, 'codex');
+    assert.equal(settings.agentModel, 'gpt-5.4');
+    assert.equal(settings.agentReasoningEffort, 'high');
+  });
 });
