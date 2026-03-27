@@ -192,7 +192,9 @@ describe('buildAgentStartupPrompt', () => {
     assert.match(prompt!, /^# Instructions/m);
     assert.match(prompt!, /Workspace layout: your shell starts in `\.`/);
     assert.match(prompt!, /Git context: this project contains one Git repository at `\.`\./);
-    assert.match(prompt!, /For testing and debugging in web projects, start a fresh dev server before running checks\./);
+    assert.match(prompt!, /For testing and debugging in web projects, start a fresh dev server before running checks,/);
+    assert.match(prompt!, /do not kill the process holding port `3200`; that port belongs to the Palx app hosting this session\./);
+    assert.match(prompt!, /Start the project on another available port instead unless the user explicitly asks to reuse `3200`\./);
     assert.match(prompt!, /If you are not sure which dev server command or script to use, ask the user to provide the dev server script before proceeding\./);
     assert.match(prompt!, /For visual UI tasks, prioritize Chrome remote-debug MCP tooling to attach to the user's current browser session/);
     assert.match(prompt!, /If that is unavailable, fall back to the `agent-browser` skill/);
