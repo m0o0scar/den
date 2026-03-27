@@ -14,6 +14,7 @@ import { discoverProjectGitRepos } from './project';
 import {
   getSessionMetadata,
   readSessionLaunchContext,
+  terminateSessionStartupScript,
   type SessionLaunchContext,
   type SessionMetadata,
 } from './session';
@@ -32,7 +33,7 @@ import {
   type SessionCanvasWorkspaceSearchResult,
 } from '@/lib/session-canvas-search';
 import { resolveSessionTerminalRepoPaths } from '@/lib/session-terminal-repos';
-import { buildShellSetDirectoryCommand } from '@/lib/shell';
+import { buildShellBootstrapCommand } from '@/lib/shell';
 import { getProjectById } from '@/lib/store';
 import {
   getFileTypeByExtension,
@@ -373,6 +374,16 @@ export async function getSessionCanvasBootstrap(sessionId: string): Promise<Sess
       }),
     ]);
 
+    if (
+      terminalSources.persistenceMode === 'shell'
+      && parsedLaunch.launchContext?.startupScript?.trim()
+    ) {
+      const stopResult = await terminateSessionStartupScript(sessionId);
+      if (!stopResult.success) {
+        console.warn('Failed to stop hidden startup-script process before terminal bootstrap:', stopResult.error);
+      }
+    }
+
     const savedLayout = readSavedSessionCanvasLayout(sessionId);
     const savedLayoutVersion = savedLayout && Number.isFinite(savedLayout.version)
       ? savedLayout.version
@@ -442,8 +453,11 @@ export async function getSessionCanvasBootstrap(sessionId: string): Promise<Sess
       savedLayoutVersion,
       initialCommands: {
         agentCommand,
-        startupCommand: parsedLaunch.launchContext?.startupScript?.trim()
-          || buildShellSetDirectoryCommand(metadata.workspacePath, terminalSources.shellKind),
+        startupCommand: buildShellBootstrapCommand(
+          metadata.workspacePath,
+          parsedLaunch.launchContext?.startupScript?.trim(),
+          terminalSources.shellKind,
+        ),
       },
     };
   } catch (error) {

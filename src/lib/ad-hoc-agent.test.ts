@@ -86,4 +86,20 @@ describe('ad-hoc agent commands', () => {
     assert.match(command, /codex .* -m 'gpt-5\.4'/);
     assert.doesNotMatch(command, /exec/);
   });
+
+  it('builds PowerShell session agent commands without POSIX env prefixes', () => {
+    const command = buildSessionAgentTerminalCommand({
+      provider: 'codex',
+      model: 'gpt-5.4',
+      reasoningEffort: 'high',
+      shellKind: 'powershell',
+      workingDirectory: 'C:\\workspace',
+      prompt: 'Implement the requested change.',
+    });
+
+    assert.match(command, /Set-Location -LiteralPath 'C:\\workspace'/);
+    assert.match(command, /\$env:NO_COLOR = '1'/);
+    assert.match(command, /(?:^|; )codex -a never -s danger-full-access -m 'gpt-5\.4'/);
+    assert.doesNotMatch(command, /NO_COLOR=1 FORCE_COLOR=0 TERM=xterm codex/);
+  });
 });

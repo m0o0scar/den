@@ -58,6 +58,7 @@ import {
 } from '@/lib/session-canvas';
 import type { SessionCanvasWorkspaceSearchResult } from '@/lib/session-canvas-search';
 import { normalizeMarkdownLists } from '@/lib/markdown';
+import { isPrimaryShortcutModifierPressed } from '@/lib/keyboard-shortcuts';
 import { getBaseName, getDirName } from '@/lib/path';
 import {
   applyThemeToTerminalWindow,
@@ -356,6 +357,20 @@ function renderHighlightedText(text: string, query: string): React.ReactNode {
   }
 
   return segments;
+}
+
+function getShortcutPlatform(): string {
+  if (typeof navigator === 'undefined') {
+    return '';
+  }
+
+  const navigatorWithUserAgentData = navigator as Navigator & {
+    userAgentData?: {
+      platform?: string;
+    };
+  };
+
+  return navigatorWithUserAgentData.userAgentData?.platform || navigator.platform || '';
 }
 
 const MarkdownFileContent = memo(function MarkdownFileContent({ content }: { content: string }) {
@@ -1206,6 +1221,21 @@ export function SessionCanvasWorkspace({
     setCommandPaletteHighlightedIndex(0);
   }, []);
 
+  const toggleExplorer = useCallback(() => {
+    if (isMobileViewport) {
+      setMobileExplorerCollapsed((previous) => !previous);
+      return;
+    }
+
+    setLayout((previous) => ({
+      ...previous,
+      explorer: {
+        ...previous.explorer,
+        collapsed: !previous.explorer.collapsed,
+      },
+    }));
+  }, [isMobileViewport]);
+
   useEffect(() => {
     if (!isCommandPaletteOpen) {
       return;
@@ -1261,25 +1291,20 @@ export function SessionCanvasWorkspace({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey)) {
+      const shortcutPlatform = getShortcutPlatform();
+      if (!isPrimaryShortcutModifierPressed(event, shortcutPlatform) || event.altKey || event.shiftKey) {
         return;
       }
 
-      if (event.key.toLowerCase() === 'k' && !event.altKey && !event.shiftKey) {
+      if (event.key.toLowerCase() === 'k') {
         event.preventDefault();
         openCommandPalette();
         return;
       }
 
-      if (event.key.toLowerCase() === 'b' && !event.altKey && !event.shiftKey && !isEditableTarget(event.target)) {
+      if (event.key.toLowerCase() === 'b' && !isEditableTarget(event.target)) {
         event.preventDefault();
-        setLayout((previous) => ({
-          ...previous,
-          explorer: {
-            ...previous.explorer,
-            collapsed: !previous.explorer.collapsed,
-          },
-        }));
+        toggleExplorer();
         return;
       }
 
@@ -1295,7 +1320,7 @@ export function SessionCanvasWorkspace({
       window.removeEventListener('wheel', handleWheel, { capture: true });
       window.removeEventListener('keydown', handleKeyDown, { capture: true });
     };
-  }, [openCommandPalette]);
+  }, [openCommandPalette, toggleExplorer]);
 
   useEffect(() => {
     setLayout(bootstrap.layout);
@@ -2192,7 +2217,7 @@ export function SessionCanvasWorkspace({
                 <button
                   type="button"
                   className={mobileToolbarButtonClass}
-                  onClick={() => setMobileExplorerCollapsed((previous) => !previous)}
+                  onClick={toggleExplorer}
                   aria-label={mobileExplorerCollapsed ? 'Open explorer' : 'Close explorer'}
                   aria-pressed={!mobileExplorerCollapsed}
                   title={mobileExplorerCollapsed ? 'Open explorer' : 'Close explorer'}
@@ -2303,15 +2328,7 @@ export function SessionCanvasWorkspace({
                 <button
                   type="button"
                   className={desktopToolbarButtonClass}
-                  onClick={() => {
-                    setLayout((previous) => ({
-                      ...previous,
-                      explorer: {
-                        ...previous.explorer,
-                        collapsed: !previous.explorer.collapsed,
-                      },
-                    }));
-                  }}
+                  onClick={toggleExplorer}
                 >
                   <PanelLeft className="h-3.5 w-3.5" />
                   Explorer

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { defaultSpawnEnv, prepareSpawnCommand, resolveExecutable } from './agent/common';
 
 export type RunCodexCliNonInteractiveOptions = {
   cwd: string;
@@ -34,6 +35,8 @@ export async function runCodexCliNonInteractive({
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'viba-codex-exec-'));
   const outputFilePath = path.join(tempDir, 'last-message.txt');
   const outputChunks: string[] = [];
+  const env = defaultSpawnEnv();
+  const codexExecutable = resolveExecutable(['codex', 'codex.cmd'], env);
 
   let schemaPath: string | null = null;
   if (outputSchema) {
@@ -59,10 +62,12 @@ export async function runCodexCliNonInteractive({
 
   try {
     const exitCode = await new Promise<number>((resolve) => {
-      const child = spawn('codex', args, {
+      const prepared = prepareSpawnCommand(codexExecutable, args, env);
+      const child = spawn(prepared.command, prepared.args, {
         cwd,
-        env: process.env,
+        env,
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsVerbatimArguments: prepared.windowsVerbatimArguments,
       });
 
       const timeout = setTimeout(() => {

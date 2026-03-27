@@ -29,6 +29,50 @@ export function normalizeText(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+function quoteWindowsCommandArg(value: string): string {
+  if (!value) {
+    return '""';
+  }
+
+  if (!/[\s"]/u.test(value)) {
+    return value;
+  }
+
+  return `"${value
+    .replace(/(\\*)"/g, '$1$1\\"')
+    .replace(/(\\+)$/u, '$1$1')}"`;
+}
+
+export function prepareSpawnCommand(
+  command: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  if (process.platform !== "win32") {
+    return {
+      command,
+      args,
+      windowsVerbatimArguments: undefined,
+    };
+  }
+
+  const extension = path.extname(command).toLowerCase();
+  if (extension !== ".cmd" && extension !== ".bat") {
+    return {
+      command,
+      args,
+      windowsVerbatimArguments: undefined,
+    };
+  }
+
+  const commandLine = [quoteWindowsCommandArg(command), ...args.map(quoteWindowsCommandArg)].join(" ");
+  return {
+    command: env.ComSpec ?? process.env.ComSpec ?? "cmd.exe",
+    args: ["/d", "/s", "/c", commandLine],
+    windowsVerbatimArguments: true,
+  };
+}
+
 export function stringifyCompact(value: unknown): string | null {
   if (value == null) {
     return null;
@@ -47,13 +91,15 @@ export function stringifyCompact(value: unknown): string | null {
 
 export async function readCommandOutput(
   command: string,
-  args: string[],
+  args: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const prepared = prepareSpawnCommand(command, args, env);
+    const child = spawn(prepared.command, prepared.args, {
       env,
       stdio: ["ignore", "pipe", "pipe"],
+      windowsVerbatimArguments: prepared.windowsVerbatimArguments,
     });
 
     let stdout = "";
