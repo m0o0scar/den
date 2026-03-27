@@ -4,9 +4,10 @@ import SessionFileBrowser from '@/components/SessionFileBrowser';
 import { useDialogKeyboardShortcuts } from '@/hooks/useDialogKeyboardShortcuts';
 import type { QuickCreateDraft } from '@/lib/quick-create';
 import { getBaseName } from '@/lib/path';
+import { SESSION_MOBILE_VIEWPORT_QUERY } from '@/lib/responsive';
 import { uploadAttachments } from '@/lib/upload-attachments';
 import { CloudDownload, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type QuickCreateSubmitInput = {
   draftId?: string | null;
@@ -58,13 +59,17 @@ export function QuickCreateTaskDialog({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPastingAttachments, setIsPastingAttachments] = useState(false);
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [isAttachmentBrowserOpen, setIsAttachmentBrowserOpen] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const mobileAttachmentInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setIsAttachmentBrowserOpen(false);
       setIsSubmitting(false);
       setIsPastingAttachments(false);
+      setIsUploadingAttachments(false);
       return;
     }
 
@@ -74,8 +79,20 @@ export function QuickCreateTaskDialog({
     setError(draft?.lastError ?? null);
     setIsSubmitting(false);
     setIsPastingAttachments(false);
+    setIsUploadingAttachments(false);
     setIsAttachmentBrowserOpen(false);
   }, [draft, isOpen]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mediaQuery = window.matchMedia(SESSION_MOBILE_VIEWPORT_QUERY);
+    const updateIsMobileViewport = () => setIsMobileViewport(mediaQuery.matches);
+    updateIsMobileViewport();
+
+    mediaQuery.addEventListener('change', updateIsMobileViewport);
+    return () => mediaQuery.removeEventListener('change', updateIsMobileViewport);
+  }, []);
 
   const appendAttachmentPaths = useCallback((incomingPaths: string[]) => {
     if (incomingPaths.length === 0) return;
@@ -122,6 +139,45 @@ export function QuickCreateTaskDialog({
       setIsPastingAttachments(false);
     }
   }, [appendAttachmentPaths, attachmentNamespaceId]);
+
+  const handleMobileAttachmentSelection = useCallback(async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (files.length === 0) return;
+
+    setError(null);
+    setIsUploadingAttachments(true);
+
+    try {
+      const formData = new FormData();
+      files.forEach((file, index) => {
+        const fileName = file.name.trim() || `attachment-${Date.now()}-${index + 1}`;
+        formData.append(`attachment-${index}`, file, fileName);
+      });
+
+      const savedPaths = await uploadAttachments(`quick-create-${attachmentNamespaceId}`, formData);
+      if (savedPaths.length === 0) {
+        throw new Error('Failed to upload selected attachments.');
+      }
+
+      appendAttachmentPaths(savedPaths);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Failed to upload selected attachments.');
+    } finally {
+      setIsUploadingAttachments(false);
+    }
+  }, [appendAttachmentPaths, attachmentNamespaceId]);
+
+  const handleSelectAttachments = useCallback(() => {
+    if (isMobileViewport) {
+      mobileAttachmentInputRef.current?.click();
+      return;
+    }
+
+    setIsAttachmentBrowserOpen(true);
+  }, [isMobileViewport]);
 
   const handleSubmit = useCallback(async () => {
     if (!message.trim() || isSubmitting) return;
@@ -227,8 +283,8 @@ export function QuickCreateTaskDialog({
                 <button
                   type="button"
                   className="inline-flex items-center gap-2 text-sm font-medium text-primary transition-colors hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={() => setIsAttachmentBrowserOpen(true)}
-                  disabled={isSubmitting}
+                  onClick={handleSelectAttachments}
+                  disabled={isSubmitting || isUploadingAttachments}
                 >
                   <CloudDownload className="h-4 w-4" />
                   Select Attachments
@@ -238,6 +294,12 @@ export function QuickCreateTaskDialog({
               {isPastingAttachments ? (
                 <div className="mb-2 text-xs text-slate-500 dark:text-slate-400">
                   Saving pasted image attachments...
+                </div>
+              ) : null}
+
+              {isUploadingAttachments ? (
+                <div className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                  Uploading selected attachments...
                 </div>
               ) : null}
 
@@ -270,6 +332,14 @@ export function QuickCreateTaskDialog({
                   ) : null}
                 </div>
               </div>
+
+              <input
+                ref={mobileAttachmentInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleMobileAttachmentSelection}
+              />
             </div>
           </div>
 
