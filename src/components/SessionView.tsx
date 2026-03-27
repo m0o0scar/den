@@ -2097,11 +2097,12 @@ export function SessionView({
             if (!response.ok || !payload?.proxyUrl) {
                 throw new Error(payload?.error || 'Failed to start preview proxy');
             }
+            const nextPreviewUrl = payload.proxyUrl;
 
             setPreviewUrl((currentPreviewUrl) => resolvePreviewIframeUrl({
                 currentPreviewUrl,
                 currentTargetUrl: previousRequestedTargetUrl,
-                nextPreviewUrl: payload.proxyUrl,
+                nextPreviewUrl,
                 nextTargetUrl: normalized,
             }));
             setLoadedPreviewTargetUrl(normalized);
