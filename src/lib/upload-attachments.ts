@@ -1,3 +1,8 @@
+type UploadAttachmentsResponse = {
+  error?: unknown;
+  savedPaths?: unknown;
+};
+
 export async function uploadAttachments(worktreePath: string, formData: FormData): Promise<string[]> {
   const requestBody = new FormData();
   requestBody.append('worktreePath', worktreePath);
@@ -15,7 +20,7 @@ export async function uploadAttachments(worktreePath: string, formData: FormData
     body: requestBody,
   });
 
-  const payload = await response.json().catch(() => null);
+  const payload = (await response.json().catch(() => null)) as UploadAttachmentsResponse | null;
   if (!response.ok) {
     throw new Error(typeof payload?.error === 'string' ? payload.error : 'Failed to upload attachments.');
   }
@@ -24,5 +29,6 @@ export async function uploadAttachments(worktreePath: string, formData: FormData
     throw new Error('Failed to upload attachments.');
   }
 
-  return payload.savedPaths.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+  const savedPaths: unknown[] = payload.savedPaths;
+  return savedPaths.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
 }
