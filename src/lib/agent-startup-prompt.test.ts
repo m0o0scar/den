@@ -192,6 +192,8 @@ describe('buildAgentStartupPrompt', () => {
     assert.match(prompt!, /^# Instructions/m);
     assert.match(prompt!, /Workspace layout: your shell starts in `\.`/);
     assert.match(prompt!, /Git context: this project contains one Git repository at `\.`\./);
+    assert.match(prompt!, /For testing and debugging in web projects, start a fresh dev server before running checks\./);
+    assert.match(prompt!, /If you are not sure which dev server command or script to use, ask the user to provide the dev server script before proceeding\./);
     assert.match(prompt!, /For visual UI tasks, prioritize Chrome remote-debug MCP tooling to attach to the user's current browser session/);
     assert.match(prompt!, /If that is unavailable, fall back to the `agent-browser` skill/);
     assert.match(prompt!, /For bugfix\/debugging tasks, use the `systematic-debugging` skill/);
@@ -227,6 +229,8 @@ describe('buildAgentStartupPrompt', () => {
 
     assert.ok(prompt);
     assert.match(prompt!, /Plan mode: in your first response of this session/);
+    assert.match(prompt!, /If you encounter ambiguity during planning, ask the user targeted clarification questions and resolve them before presenting the plan\./);
+    assert.match(prompt!, /Once the scope is clear, present a concrete implementation plan and wait for explicit user approval/);
     assert.match(prompt!, /After the user approves that initial plan/);
     assert.match(prompt!, /small or trivial follow-up changes directly without re-requesting approval/);
     assert.match(prompt!, /Request approval again only when a proposed change is substantial/);
