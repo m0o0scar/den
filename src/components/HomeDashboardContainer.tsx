@@ -29,6 +29,7 @@ import {
   sortHomeProjects,
   type HomeProjectSort,
 } from '@/lib/home-project-sort';
+import { countActiveHomeProjectSessionsByProject } from '@/lib/home-project-activity';
 import {
   omitRecordKeys,
   toHomeProjectGitRepos,
@@ -880,17 +881,17 @@ export default function HomeDashboardContainer({
     canConfirm: !isDeletingProject,
   });
 
-  const runningSessionCountByProject = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const session of allSessions) {
-      const projectKey = session.projectId
-        || (session.projectPath ? resolveProjectEntry(session.projectPath).key : '')
-        || session.repoPath;
-      if (!projectKey) continue;
-      counts.set(projectKey, (counts.get(projectKey) ?? 0) + 1);
-    }
-    return counts;
-  }, [allSessions, resolveProjectEntry]);
+  const activeSessionCountByProject = useMemo(() => (
+    countActiveHomeProjectSessionsByProject(
+      allSessions,
+      (session) => (
+        session.projectId
+          || (session.projectPath ? resolveProjectEntry(session.projectPath).key : '')
+          || session.repoPath
+          || ''
+      ),
+    )
+  ), [allSessions, resolveProjectEntry]);
 
   const draftCountByProject = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1140,7 +1141,7 @@ export default function HomeDashboardContainer({
         ThemeModeIcon={ThemeModeIcon}
         filteredRecentProjects={filteredRecentProjects}
         isDarkThemeActive={isDarkThemeActive}
-        runningSessionCountByProject={runningSessionCountByProject}
+        activeSessionCountByProject={activeSessionCountByProject}
         draftCountByProject={draftCountByProject}
         projectCardIconByPath={projectCardIconByKey}
         brokenProjectCardIcons={brokenRepoCardIcons}
