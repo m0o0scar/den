@@ -332,22 +332,54 @@ export async function updateProjectSettings(projectId: string, updates: Partial<
   if (!resolvedProjectId) {
     throw new Error('Project not found.');
   }
-  const currentConfig = await getConfig();
-  const currentProjectSettings = currentConfig.projectSettings[resolvedProjectId] || currentConfig.projectSettings[projectId] || {};
-  const nextProjectSettings = normalizeProjectSettings({
-    ...currentProjectSettings,
-    ...updates,
+  const db = getLocalDb();
+  const transaction = db.transaction((nextProjectId: string, nextUpdates: Partial<ProjectSettings>) => {
+    const currentRow = db.prepare(`
+      SELECT
+        agent_provider, agent_model, agent_reasoning_effort,
+        startup_script, dev_server_script, alias
+      FROM app_config_project_entity_settings
+      WHERE project_id = ?
+    `).get(nextProjectId) as Omit<ProjectSettingsRow, 'project_id'> | undefined;
+
+    const currentProjectSettings = currentRow
+      ? toProjectSettings({ project_id: nextProjectId, ...currentRow })
+      : {};
+    const nextProjectSettings = normalizeProjectSettings({
+      ...currentProjectSettings,
+      ...nextUpdates,
+    });
+
+    db.prepare(`
+      INSERT INTO app_config_project_entity_settings (
+        project_id, agent_provider, agent_model, agent_reasoning_effort,
+        startup_script, dev_server_script, alias
+      ) VALUES (
+        @projectId, @agentProvider, @agentModel, @agentReasoningEffort,
+        @startupScript, @devServerScript, @alias
+      )
+      ON CONFLICT(project_id) DO UPDATE SET
+        agent_provider = excluded.agent_provider,
+        agent_model = excluded.agent_model,
+        agent_reasoning_effort = excluded.agent_reasoning_effort,
+        startup_script = excluded.startup_script,
+        dev_server_script = excluded.dev_server_script,
+        alias = excluded.alias
+    `).run({
+      projectId: nextProjectId,
+      agentProvider: nextProjectSettings.agentProvider ?? null,
+      agentModel: nextProjectSettings.agentModel ?? null,
+      agentReasoningEffort: normalizeNullableProviderReasoningEffort(
+        nextProjectSettings.agentProvider,
+        nextProjectSettings.agentReasoningEffort,
+      ),
+      startupScript: nextProjectSettings.startupScript ?? null,
+      devServerScript: nextProjectSettings.devServerScript ?? null,
+      alias: nextProjectSettings.alias ?? null,
+    });
   });
 
-  const newConfig: Config = {
-    ...currentConfig,
-    projectSettings: {
-      ...currentConfig.projectSettings,
-      [resolvedProjectId]: nextProjectSettings,
-    },
-  };
-
-  await saveConfig(newConfig);
+  transaction(resolvedProjectId, updates);
   return getConfig();
 }
 
