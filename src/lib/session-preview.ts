@@ -23,8 +23,37 @@ export const shouldForcePreviewRemount = (currentPreviewUrl: string, nextPreview
         && currentComparableUrl === nextComparableUrl;
 };
 
+export const shouldForcePreviewRetryForTarget = (currentTargetUrl: string, nextTargetUrl: string): boolean => {
+    const currentComparableUrl = currentTargetUrl.trim();
+    const nextComparableUrl = nextTargetUrl.trim();
+
+    return currentComparableUrl.length > 0
+        && currentComparableUrl === nextComparableUrl;
+};
+
 export const buildPreviewReloadUrl = (previewUrl: string, nonce = Date.now()): string => {
     const parsed = new URL(previewUrl);
     parsed.searchParams.set(PREVIEW_RELOAD_SEARCH_PARAM, String(nonce));
     return parsed.toString();
 };
+
+type ResolvePreviewIframeUrlOptions = {
+    currentPreviewUrl: string;
+    currentTargetUrl: string;
+    nextPreviewUrl: string;
+    nextTargetUrl: string;
+    nonce?: number;
+};
+
+export const resolvePreviewIframeUrl = ({
+    currentPreviewUrl,
+    currentTargetUrl,
+    nextPreviewUrl,
+    nextTargetUrl,
+    nonce,
+}: ResolvePreviewIframeUrlOptions): string => (
+    shouldForcePreviewRemount(currentPreviewUrl, nextPreviewUrl)
+        || shouldForcePreviewRetryForTarget(currentTargetUrl, nextTargetUrl)
+        ? buildPreviewReloadUrl(nextPreviewUrl, nonce)
+        : nextPreviewUrl
+);
