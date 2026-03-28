@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import {
+  buildShellModeTerminalBootstrapCommand,
   buildTtydTerminalSrc,
   detectGitRemoteProvider,
   mergeGitTerminalSessionEnvironments,
@@ -156,6 +157,65 @@ describe('parseTerminalWorkingDirectoryFromSrc', () => {
     });
 
     assert.strictEqual(parseTerminalWorkingDirectoryFromSrc(src), 'C:\\repo');
+  });
+});
+
+describe('buildShellModeTerminalBootstrapCommand', () => {
+  it('builds a shell bootstrap command from cwd only', () => {
+    const src = buildTtydTerminalSrc('session-1', 'agent', null, {
+      persistenceMode: 'shell',
+      workingDirectory: '/tmp/workspace',
+      shellKind: 'posix',
+    });
+
+    assert.strictEqual(
+      buildShellModeTerminalBootstrapCommand(src, 'posix'),
+      "cd '/tmp/workspace'",
+    );
+  });
+
+  it('builds a shell bootstrap command from env only', () => {
+    const src = buildTtydTerminalSrc('session-1', 'agent', [
+      { name: 'OPENAI_API_KEY', value: 'sk-example' },
+    ], {
+      persistenceMode: 'shell',
+      shellKind: 'posix',
+    });
+
+    assert.strictEqual(
+      buildShellModeTerminalBootstrapCommand(src, 'posix'),
+      "export OPENAI_API_KEY='sk-example'",
+    );
+  });
+
+  it('builds a shell bootstrap command from env and cwd', () => {
+    const src = buildTtydTerminalSrc('session-1', 'agent', [
+      { name: 'OPENAI_API_KEY', value: 'sk-example' },
+    ], {
+      persistenceMode: 'shell',
+      workingDirectory: '/tmp/workspace',
+      shellKind: 'posix',
+    });
+
+    assert.strictEqual(
+      buildShellModeTerminalBootstrapCommand(src, 'posix'),
+      "export OPENAI_API_KEY='sk-example' && cd '/tmp/workspace'",
+    );
+  });
+
+  it('quotes PowerShell env and cwd values correctly', () => {
+    const src = buildTtydTerminalSrc('session-1', 'agent', [
+      { name: 'OPENAI_API_KEY', value: "token's value" },
+    ], {
+      persistenceMode: 'shell',
+      workingDirectory: "C:\\Work Tree\\Agent's Repo",
+      shellKind: 'powershell',
+    });
+
+    assert.strictEqual(
+      buildShellModeTerminalBootstrapCommand(src, 'powershell'),
+      "$env:OPENAI_API_KEY = 'token''s value'; Set-Location -LiteralPath 'C:\\Work Tree\\Agent''s Repo'",
+    );
   });
 });
 

@@ -6,7 +6,9 @@ import type {
   SessionCanvasAgentTerminalPanel,
   SessionCanvasViewport,
 } from '@/lib/types';
+import { joinShellStatements } from './shell.ts';
 import {
+  buildShellModeTerminalBootstrapCommand,
   buildTtydTerminalSrc,
   type TerminalPersistenceMode,
   type TerminalSessionEnvironment,
@@ -319,6 +321,33 @@ export function buildSessionCanvasTerminalSrc({
     shellKind,
     workingDirectory: workspaceRootPath,
   });
+}
+
+export function buildSessionCanvasTerminalBootstrapCommand({
+  src,
+  persistenceMode,
+  shellKind,
+  panelBootstrapCommand,
+}: {
+  src: string;
+  persistenceMode: TerminalPersistenceMode;
+  shellKind: TerminalShellKind;
+  panelBootstrapCommand?: string | null;
+}): string | null {
+  const normalizedPanelBootstrapCommand = panelBootstrapCommand?.trim() || '';
+  if (persistenceMode !== 'shell') {
+    return normalizedPanelBootstrapCommand || null;
+  }
+
+  const bootstrapCommand = joinShellStatements(
+    [
+      buildShellModeTerminalBootstrapCommand(src, shellKind),
+      normalizedPanelBootstrapCommand,
+    ],
+    shellKind,
+  );
+
+  return bootstrapCommand || null;
 }
 
 export function getSessionCanvasTerminalRole(

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   SESSION_CANVAS_DEFAULT_EXPLORER_WIDTH,
+  buildSessionCanvasTerminalBootstrapCommand,
   buildSessionCanvasTerminalSrc,
   createDefaultSessionCanvasLayout,
   fitSessionCanvasLayoutToViewport,
@@ -140,6 +141,64 @@ describe('session canvas layout helpers', () => {
 
     assert.match(agentSrc, /arg=-c&arg=%2Ftmp%2Fworkspace/);
     assert.match(terminalSrc, /arg=-c&arg=%2Ftmp%2Fworkspace/);
+  });
+
+  it('prepends shell-mode src bootstrap before panel commands', () => {
+    const startupPanel = createDefaultSessionCanvasLayout({
+      workspacePath: 'C:\\workspace',
+      startupScript: 'npm run dev',
+    }).panels[1];
+
+    assert.ok(startupPanel);
+    assert.equal(startupPanel.type, 'terminal');
+
+    const src = buildSessionCanvasTerminalSrc({
+      sessionName: 'session-1',
+      panel: startupPanel,
+      terminalEnvironments: [{ name: 'OPENAI_API_KEY', value: 'sk-example' }],
+      persistenceMode: 'shell',
+      shellKind: 'powershell',
+      workspaceRootPath: 'C:\\workspace',
+    });
+
+    assert.strictEqual(
+      buildSessionCanvasTerminalBootstrapCommand({
+        src,
+        persistenceMode: 'shell',
+        shellKind: 'powershell',
+        panelBootstrapCommand: "Set-Location -LiteralPath 'C:\\workspace'; npm run dev",
+      }),
+      "$env:OPENAI_API_KEY = 'sk-example'; Set-Location -LiteralPath 'C:\\workspace'; Set-Location -LiteralPath 'C:\\workspace'; npm run dev",
+    );
+  });
+
+  it('derives shell-mode bootstrap from src even without a panel command', () => {
+    const startupPanel = createDefaultSessionCanvasLayout({
+      workspacePath: 'C:\\workspace',
+      startupScript: null,
+    }).panels[1];
+
+    assert.ok(startupPanel);
+    assert.equal(startupPanel.type, 'terminal');
+
+    const src = buildSessionCanvasTerminalSrc({
+      sessionName: 'session-1',
+      panel: startupPanel,
+      terminalEnvironments: [{ name: 'OPENAI_API_KEY', value: 'sk-example' }],
+      persistenceMode: 'shell',
+      shellKind: 'powershell',
+      workspaceRootPath: 'C:\\workspace',
+    });
+
+    assert.strictEqual(
+      buildSessionCanvasTerminalBootstrapCommand({
+        src,
+        persistenceMode: 'shell',
+        shellKind: 'powershell',
+        panelBootstrapCommand: null,
+      }),
+      "$env:OPENAI_API_KEY = 'sk-example'; Set-Location -LiteralPath 'C:\\workspace'",
+    );
   });
 
   it('fits the canvas viewport so all panels are visible', () => {

@@ -5,7 +5,12 @@ import { startTtydProcess } from '@/app/actions/git';
 import { useEscapeDismiss } from '@/hooks/use-escape-dismiss';
 import type { TerminalWindow } from '@/hooks/useTerminalLink';
 import { normalizeProviderReasoningEffort } from '@/lib/agent/reasoning';
-import { buildTtydTerminalSrc, type TerminalShellKind } from '@/lib/terminal-session';
+import {
+  buildShellModeTerminalBootstrapCommand,
+  buildTtydTerminalSrc,
+  type TerminalShellKind,
+} from '@/lib/terminal-session';
+import { joinShellStatements } from '@/lib/shell';
 import {
   applyThemeToTerminalWindow,
   resolveShouldUseDarkTheme,
@@ -79,6 +84,7 @@ export default function AdHocAgentTerminalModal({
   const [statusError, setStatusError] = useState<string | null>(null);
   const [terminalSrc, setTerminalSrc] = useState('/terminal');
   const [terminalCommand, setTerminalCommand] = useState('');
+  const [terminalShellKind, setTerminalShellKind] = useState<TerminalShellKind>('posix');
   const [terminalProvider, setTerminalProvider] = useState<AgentProvider>('codex');
   const [terminalModel, setTerminalModel] = useState('');
   const [terminalReasoningEffort, setTerminalReasoningEffort] = useState<ReasoningEffort | ''>('');
@@ -91,6 +97,7 @@ export default function AdHocAgentTerminalModal({
   const resetState = useCallback(() => {
     setTerminalSrc('/terminal');
     setTerminalCommand('');
+    setTerminalShellKind('posix');
     setTerminalProvider('codex');
     setTerminalModel('');
     setTerminalReasoningEffort('');
@@ -224,6 +231,7 @@ export default function AdHocAgentTerminalModal({
       setTerminalModel(resolvedModel);
       setTerminalReasoningEffort(resolvedReasoningEffort || '');
       setTerminalCommand(command);
+      setTerminalShellKind(shellKind);
       setTerminalSrc(buildTtydTerminalSrc(`adhoc-${Date.now()}`, 'terminal', undefined, {
         persistenceMode: 'shell',
         shellKind,
@@ -280,6 +288,13 @@ export default function AdHocAgentTerminalModal({
     }
 
     const iframe = iframeRef.current;
+    const commandToInject = joinShellStatements(
+      [
+        buildShellModeTerminalBootstrapCommand(terminalSrc, terminalShellKind),
+        terminalCommand,
+      ],
+      terminalShellKind,
+    );
     const checkAndInject = (attempts = 0) => {
       if (attempts > 40) {
         setTerminalError('Timed out while waiting for terminal to initialize.');
@@ -297,7 +312,7 @@ export default function AdHocAgentTerminalModal({
             win,
             shouldUseDark ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT,
           );
-          win.term.paste(`${terminalCommand}\r`);
+          win.term.paste(`${commandToInject}\r`);
           setIsCommandInjected(true);
           setTerminalError(null);
           win.focus();
@@ -312,7 +327,7 @@ export default function AdHocAgentTerminalModal({
     };
 
     window.setTimeout(() => checkAndInject(), 500);
-  }, [hasStartedTerminal, isCommandInjected, resolvedTheme, terminalCommand]);
+  }, [hasStartedTerminal, isCommandInjected, resolvedTheme, terminalCommand, terminalShellKind, terminalSrc]);
 
   if (!isOpen) {
     return null;

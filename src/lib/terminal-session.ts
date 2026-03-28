@@ -1,3 +1,9 @@
+import {
+  buildShellExportEnvironmentCommand,
+  buildShellSetDirectoryCommand,
+  joinShellStatements,
+} from './shell.ts';
+
 export type TerminalSessionRole = string;
 export type GitRemoteProvider = 'github' | 'gitlab';
 export type TerminalPersistenceMode = 'tmux' | 'shell';
@@ -256,4 +262,17 @@ export function parseTerminalWorkingDirectoryFromSrc(src: string): string | null
   }
 
   return params.get(SHELL_CWD_PARAM)?.trim() || null;
+}
+
+export function buildShellModeTerminalBootstrapCommand(
+  src: string,
+  shellKind: TerminalShellKind,
+): string {
+  return joinShellStatements(
+    [
+      buildShellExportEnvironmentCommand(parseTerminalSessionEnvironmentsFromSrc(src), shellKind),
+      buildShellSetDirectoryCommand(parseTerminalWorkingDirectoryFromSrc(src) || '', shellKind),
+    ],
+    shellKind,
+  );
 }

@@ -45,6 +45,7 @@ import {
 import { deleteSessionInBackground } from '@/app/actions/session';
 import { startTtydProcess, terminateTmuxSessionRole } from '@/app/actions/git';
 import {
+  buildSessionCanvasTerminalBootstrapCommand,
   buildSessionCanvasTerminalSrc,
   clampSessionCanvasScale,
   createSessionCanvasPanelId,
@@ -1961,24 +1962,36 @@ export function SessionCanvasWorkspace({
 
   const renderPanel = useCallback((panel: SessionCanvasPanel) => {
     if (panel.type === 'agent-terminal') {
+      const src = buildSessionCanvasTerminalSrc({
+        sessionName: sessionId,
+        panel,
+        terminalEnvironments: bootstrap.terminalEnvironments,
+        persistenceMode: bootstrap.terminalPersistenceMode,
+        shellKind: bootstrap.terminalShellKind,
+        workspaceRootPath: bootstrap.workspaceRootPath,
+      });
+      const bootstrapCommand = buildSessionCanvasTerminalBootstrapCommand({
+        src,
+        persistenceMode: bootstrap.terminalPersistenceMode,
+        shellKind: bootstrap.terminalShellKind,
+        panelBootstrapCommand: bootstrap.initialCommands.agentCommand,
+      });
+
       return (
         <TerminalPanel
           ref={(handle) => registerAgentTerminalHandle(panel.id, handle)}
           sessionId={sessionId}
           panel={panel}
-          src={buildSessionCanvasTerminalSrc({
-            sessionName: sessionId,
-            panel,
-            terminalEnvironments: bootstrap.terminalEnvironments,
-            persistenceMode: bootstrap.terminalPersistenceMode,
-            shellKind: bootstrap.terminalShellKind,
-            workspaceRootPath: bootstrap.workspaceRootPath,
-          })}
+          src={src}
           terminalPersistenceMode={bootstrap.terminalPersistenceMode}
           terminalServiceReady={terminalServiceReady}
           terminalError={terminalServiceError}
-          bootstrapCommand={bootstrap.initialCommands.agentCommand}
-          shouldBootstrap={layout.bootstrap.agentLaunchVersion !== SESSION_CANVAS_AGENT_BOOTSTRAP_VERSION}
+          bootstrapCommand={bootstrapCommand}
+          shouldBootstrap={
+            bootstrap.terminalPersistenceMode === 'shell'
+              ? Boolean(bootstrapCommand)
+              : layout.bootstrap.agentLaunchVersion !== SESSION_CANVAS_AGENT_BOOTSTRAP_VERSION
+          }
           onBootstrapComplete={() => markBootstrapComplete('agentStarted')}
           onOpenPreview={handleOpenPreviewUrl}
         />
@@ -1995,9 +2008,25 @@ export function SessionCanvasWorkspace({
         shellKind: bootstrap.terminalShellKind,
         workspaceRootPath: bootstrap.workspaceRootPath,
       });
-      const bootstrapCommand = terminalPanel.payload.role === 'startup'
+      const panelBootstrapCommand = terminalPanel.payload.role === 'startup'
         ? bootstrap.initialCommands.startupCommand
         : null;
+      const bootstrapCommand = buildSessionCanvasTerminalBootstrapCommand({
+        src,
+        persistenceMode: bootstrap.terminalPersistenceMode,
+        shellKind: bootstrap.terminalShellKind,
+        panelBootstrapCommand,
+      });
+      const shouldBootstrap = terminalPanel.payload.role === 'startup'
+        ? (
+            bootstrap.terminalPersistenceMode === 'shell'
+              ? Boolean(bootstrapCommand)
+              : layout.bootstrap.startupLaunchVersion !== SESSION_CANVAS_STARTUP_BOOTSTRAP_VERSION
+          )
+        : (
+            bootstrap.terminalPersistenceMode === 'shell'
+            && Boolean(bootstrapCommand)
+          );
 
       return (
         <TerminalPanel
@@ -2008,11 +2037,12 @@ export function SessionCanvasWorkspace({
           terminalServiceReady={terminalServiceReady}
           terminalError={terminalServiceError}
           bootstrapCommand={bootstrapCommand}
-          shouldBootstrap={
+          shouldBootstrap={shouldBootstrap}
+          onBootstrapComplete={
             terminalPanel.payload.role === 'startup'
-            && layout.bootstrap.startupLaunchVersion !== SESSION_CANVAS_STARTUP_BOOTSTRAP_VERSION
+              ? () => markBootstrapComplete('startupStarted')
+              : () => {}
           }
-          onBootstrapComplete={() => markBootstrapComplete('startupStarted')}
           onOpenPreview={handleOpenPreviewUrl}
         />
       );
