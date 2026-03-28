@@ -79,6 +79,7 @@ import { HomeDashboard } from './git-repo-selector/HomeDashboard';
 import { RepoSettingsDialog } from './git-repo-selector/RepoSettingsDialog';
 import { CloneRemoteDialog } from './git-repo-selector/CloneRemoteDialog';
 import { type RepoCredentialSelection } from './git-repo-selector/types';
+import { cn } from '@/lib/utils';
 import type {
   AgentProvider,
   AppStatus,
@@ -3194,6 +3195,9 @@ export default function GitRepoSelector({
     'border border-slate-200/70 bg-white/30 shadow-sm dark:border-slate-800 dark:bg-slate-950/30';
   const newSessionChipClass =
     'border border-slate-200/70 bg-white/35 text-slate-700 dark:border-slate-800 dark:bg-slate-950/35 dark:text-slate-200';
+  const newSessionSegmentButtonClass = 'h-full px-2.5 text-[11px] font-semibold transition lg:px-3';
+  const newSessionUnavailableSegmentClass =
+    'cursor-not-allowed bg-slate-100/85 text-slate-400 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.2)] hover:bg-slate-100/85 dark:bg-slate-900/90 dark:text-slate-600 dark:shadow-[inset_0_0_0_1px_rgba(51,65,85,0.85)] dark:hover:bg-slate-900/90';
 
   return (
     <>
@@ -3649,10 +3653,12 @@ export default function GitRepoSelector({
                       >
                         <button
                           type="button"
-                          className={`h-full px-2.5 text-[11px] font-semibold transition lg:px-3 ${sessionMode === 'fast'
-                            ? 'bg-primary text-white'
-                            : 'text-slate-700 hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-900/70'
-                            }`}
+                          className={cn(
+                            newSessionSegmentButtonClass,
+                            sessionMode === 'fast'
+                              ? 'bg-primary text-white'
+                              : 'text-slate-700 hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-900/70',
+                          )}
                           onClick={() => handleSessionModeChange('fast')}
                           aria-pressed={sessionMode === 'fast'}
                           disabled={loading}
@@ -3667,10 +3673,12 @@ export default function GitRepoSelector({
                         <div className="h-5 w-px bg-slate-200/80 dark:bg-slate-800" />
                         <button
                           type="button"
-                          className={`h-full px-2.5 text-[11px] font-semibold transition lg:px-3 ${sessionMode === 'plan'
-                            ? 'bg-primary text-white'
-                            : 'text-slate-700 hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-900/70'
-                            }`}
+                          className={cn(
+                            newSessionSegmentButtonClass,
+                            sessionMode === 'plan'
+                              ? 'bg-primary text-white'
+                              : 'text-slate-700 hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-900/70',
+                          )}
                           onClick={() => handleSessionModeChange('plan')}
                           aria-pressed={sessionMode === 'plan'}
                           disabled={loading}
@@ -3691,10 +3699,12 @@ export default function GitRepoSelector({
                       >
                         <button
                           type="button"
-                          className={`h-full px-2.5 text-[11px] font-semibold transition lg:px-3 ${sessionWorkspacePreference === 'local'
-                            ? 'bg-primary text-white'
-                            : 'text-slate-700 hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-900/70'
-                            }`}
+                          className={cn(
+                            newSessionSegmentButtonClass,
+                            sessionWorkspacePreference === 'local'
+                              ? 'bg-primary text-white'
+                              : 'text-slate-700 hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-900/70',
+                          )}
                           onClick={() => handleSessionWorkspacePreferenceChange('local')}
                           aria-pressed={sessionWorkspacePreference === 'local'}
                           disabled={loading}
@@ -3709,10 +3719,13 @@ export default function GitRepoSelector({
                         <div className="h-5 w-px bg-slate-200/80 dark:bg-slate-800" />
                         <button
                           type="button"
-                          className={`h-full px-2.5 text-[11px] font-semibold transition lg:px-3 ${sessionWorkspacePreference === 'workspace'
-                            ? 'bg-primary text-white'
-                            : 'text-slate-700 hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-900/70'
-                            }`}
+                          className={cn(
+                            newSessionSegmentButtonClass,
+                            sessionWorkspacePreference === 'workspace'
+                              ? 'bg-primary text-white'
+                              : 'text-slate-700 hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-900/70',
+                            isFolderlessSelectedProject && newSessionUnavailableSegmentClass,
+                          )}
                           onClick={() => handleSessionWorkspacePreferenceChange('workspace')}
                           aria-pressed={sessionWorkspacePreference === 'workspace'}
                           disabled={loading || isFolderlessSelectedProject}
