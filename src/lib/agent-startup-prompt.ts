@@ -1,9 +1,11 @@
 import type { SessionGitRepoContext, SessionWorkspaceFolder, SessionWorkspaceMode } from './types.ts';
 
 const PLAN_MODE_STARTUP_INSTRUCTION =
-  'Plan mode: in your first response of this session, inspect the relevant code, present a concrete implementation plan, and wait for explicit user approval before any file edits or write commands. After the user approves that initial plan, execute small or trivial follow-up changes directly without re-requesting approval. Request approval again only when a proposed change is substantial (for example meaningfully expands scope, changes approach, or introduces material risk).';
+  'Plan mode: in your first response of this session, inspect the relevant code. If you encounter ambiguity during planning, ask the user targeted clarification questions and resolve them before presenting the plan. Once the scope is clear, present a concrete implementation plan and wait for explicit user approval before any file edits or write commands. After the user approves that initial plan, execute small or trivial follow-up changes directly without re-requesting approval. Request approval again only when a proposed change is substantial (for example meaningfully expands scope, changes approach, or introduces material risk).';
 const AUTO_COMMIT_INSTRUCTION =
   'If you changed files inside a Git repository and the work for that repository is complete, commit that repository without confirmation. Use a commit message with a clear title and a detailed body explaining what changed and why. If multiple repositories changed, handle each repository separately. If no repository applies, skip Git-only steps. If GITHUB_TOKEN or GITLAB_TOKEN is set, push each changed repository after committed rounds and create or update a pull or merge request for each changed repository; include the repository path and link in the first push reply. Prefer provider-native CLIs when available: for GitHub, `gh auth setup-git` can wire `GITHUB_TOKEN` into `git push`; for GitLab, use `glab` with `GITLAB_TOKEN` and honor `GITLAB_HOST` for self-hosted instances.';
+const DEV_SERVER_TESTING_INSTRUCTION =
+  'For testing and debugging in web projects, start a fresh dev server before running checks, but do not kill the process holding port `3200`; that port belongs to the Palx app hosting this session. Start the project on another available port instead unless the user explicitly asks to reuse `3200`. If you are not sure which dev server command or script to use, ask the user to provide the dev server script before proceeding.';
 const AGENT_BROWSER_SKILL_INSTRUCTION =
   'For visual UI tasks, prioritize Chrome remote-debug MCP tooling to attach to the user\'s current browser session. If that is unavailable, fall back to the `agent-browser` skill (https://skills.sh/vercel-labs/agent-browser/agent-browser), which may run in a standalone browser session.';
 const SYSTEMATIC_DEBUGGING_SKILL_INSTRUCTION =
@@ -179,6 +181,7 @@ export function buildAgentStartupPrompt({
   instructionLines.push(...buildWorkspaceInstructionLines(workspaceMode, workspaceFolders));
   instructionLines.push(...buildProjectGitInstructionLines(workspaceMode, gitRepos, discoveredRepoRelativePaths));
   instructionLines.push(AUTO_COMMIT_INSTRUCTION);
+  instructionLines.push(DEV_SERVER_TESTING_INSTRUCTION);
   instructionLines.push(AGENT_BROWSER_SKILL_INSTRUCTION);
   instructionLines.push(SYSTEMATIC_DEBUGGING_SKILL_INSTRUCTION);
   instructionLines.push(OPTIONAL_SKILL_DISCOVERY_INSTRUCTION);

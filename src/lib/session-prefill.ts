@@ -1,4 +1,5 @@
 type SessionPrefillProjectContext = {
+  projectId?: string;
   projectPath?: string;
   repoPath?: string;
 };
@@ -9,11 +10,15 @@ function normalizePathForComparison(pathValue: string): string {
 
 export function doesSessionPrefillMatchProject(
   context: SessionPrefillProjectContext,
-  selectedProjectPath: string,
+  selectedProjectReference: string,
 ): boolean {
-  const normalizedSelectedProjectPath = normalizePathForComparison(selectedProjectPath.trim());
-  if (!normalizedSelectedProjectPath) {
+  const normalizedSelectedProjectReference = selectedProjectReference.trim();
+  if (!normalizedSelectedProjectReference) {
     return false;
+  }
+
+  if (context.projectId?.trim() === normalizedSelectedProjectReference) {
+    return true;
   }
 
   const candidatePaths = [context.projectPath, context.repoPath]
@@ -21,5 +26,5 @@ export function doesSessionPrefillMatchProject(
     .filter(Boolean)
     .map(normalizePathForComparison);
 
-  return candidatePaths.includes(normalizedSelectedProjectPath);
+  return candidatePaths.includes(normalizePathForComparison(normalizedSelectedProjectReference));
 }

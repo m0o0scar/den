@@ -1,13 +1,15 @@
-import type { Project } from '@/lib/types';
-import { getBaseName } from '@/lib/path';
+import type { Project } from './types.ts';
+import { getBaseName } from './path.ts';
 
 export type ResolvedProjectReference = {
   key: string;
   project: Project | null;
   primaryPath: string | null;
+  sessionReference: string | null;
   displayName: string;
   secondaryLabel: string;
   folderPaths: string[];
+  hasAssociatedFolders: boolean;
   isOpenable: boolean;
   compatibilityKeys: string[];
 };
@@ -59,9 +61,11 @@ export function resolveClientProjectReference(
       key: fallbackPath,
       project: null,
       primaryPath: fallbackPath || null,
+      sessionReference: fallbackPath || null,
       displayName: fallbackDisplayName,
       secondaryLabel: fallbackPath || 'No folders associated',
       folderPaths: fallbackPath ? [fallbackPath] : [],
+      hasAssociatedFolders: Boolean(fallbackPath),
       isOpenable: Boolean(fallbackPath),
       compatibilityKeys: fallbackPath ? [fallbackPath] : [],
     };
@@ -69,6 +73,7 @@ export function resolveClientProjectReference(
 
   const primaryPath = getClientProjectPrimaryFolderPath(project);
   const folderCount = project.folderPaths.length;
+  const sessionReference = primaryPath || project.id;
   const secondaryLabel = primaryPath
     ? (folderCount > 1 ? `${primaryPath} (${folderCount} folders)` : primaryPath)
     : 'No folders associated';
@@ -77,10 +82,12 @@ export function resolveClientProjectReference(
     key: project.id,
     project,
     primaryPath,
+    sessionReference,
     displayName: project.name.trim() || getBaseName(primaryPath || '') || 'Project',
     secondaryLabel,
     folderPaths: project.folderPaths,
-    isOpenable: Boolean(primaryPath),
+    hasAssociatedFolders: folderCount > 0,
+    isOpenable: Boolean(sessionReference),
     compatibilityKeys: getClientProjectCompatibilityKeys(project),
   };
 }
