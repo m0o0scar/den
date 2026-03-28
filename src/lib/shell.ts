@@ -41,6 +41,20 @@ export function buildShellSetDirectoryCommand(directoryPath: string, shellKind: 
   return `cd ${quotePosixShellArg(trimmed)}`;
 }
 
+export function buildShellBootstrapCommand(
+  directoryPath: string,
+  command: string | null | undefined,
+  shellKind: ShellKind,
+): string {
+  return joinShellStatements(
+    [
+      buildShellSetDirectoryCommand(directoryPath, shellKind),
+      command,
+    ],
+    shellKind,
+  );
+}
+
 export function joinShellStatements(statements: Array<string | null | undefined>, shellKind: ShellKind): string {
   const filtered = statements.map((statement) => statement?.trim()).filter(Boolean);
   if (filtered.length === 0) return '';

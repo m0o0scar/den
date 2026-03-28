@@ -20,6 +20,7 @@ import {
   createDeferred,
   defaultSpawnEnv,
   normalizeText,
+  prepareSpawnCommand,
   readCommandOutput,
   resolveExecutable,
   stringifyCompact,
@@ -310,10 +311,13 @@ class CodexAppServerConnection {
     }
     args.push("app-server");
 
-    this.child = spawn(codexExecutable, args, {
+    const prepared = prepareSpawnCommand(codexExecutable, args, env);
+
+    this.child = spawn(prepared.command, prepared.args, {
       env,
       stdio: ["pipe", "pipe", "pipe"],
       cwd: this.workspacePath,
+      windowsVerbatimArguments: prepared.windowsVerbatimArguments,
     });
 
     this.child.stdout.setEncoding("utf8");
@@ -647,10 +651,12 @@ export async function ensureCodexInstalled(
   const env = defaultSpawnEnv();
 
   activeInstall = new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, {
+    const prepared = prepareSpawnCommand(command, args, env);
+    const child = spawn(prepared.command, prepared.args, {
       env,
       stdio: ["ignore", "pipe", "pipe"],
       cwd: process.cwd(),
+      windowsVerbatimArguments: prepared.windowsVerbatimArguments,
     });
 
     child.stdout.setEncoding("utf8");

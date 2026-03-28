@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import {
+    buildShellBootstrapCommand,
     buildShellExportEnvironmentCommand,
     buildShellSetDirectoryCommand,
     joinShellStatements,
@@ -76,5 +77,28 @@ describe('joinShellStatements', () => {
 
     it('joins PowerShell statements with semicolons', () => {
         assert.strictEqual(joinShellStatements(['echo 1', 'echo 2'], 'powershell'), 'echo 1; echo 2');
+    });
+});
+
+describe('buildShellBootstrapCommand', () => {
+    it('prepends a POSIX working directory before the command', () => {
+        assert.strictEqual(
+            buildShellBootstrapCommand('/tmp/work tree', 'npm install', 'posix'),
+            "cd '/tmp/work tree' && npm install",
+        );
+    });
+
+    it('prepends a PowerShell working directory before the command', () => {
+        assert.strictEqual(
+            buildShellBootstrapCommand('C:\\Work Tree', 'npm install', 'powershell'),
+            "Set-Location -LiteralPath 'C:\\Work Tree'; npm install",
+        );
+    });
+
+    it('falls back to only changing directories when the command is empty', () => {
+        assert.strictEqual(
+            buildShellBootstrapCommand('C:\\Work Tree', '', 'powershell'),
+            "Set-Location -LiteralPath 'C:\\Work Tree'",
+        );
     });
 });

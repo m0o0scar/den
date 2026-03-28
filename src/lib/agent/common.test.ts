@@ -1,9 +1,10 @@
 import assert from 'node:assert';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
-import { defaultSpawnEnv, resolveExecutable } from './common.ts';
+import { defaultSpawnEnv, prepareSpawnCommand, resolveExecutable } from './common.ts';
 
 describe('defaultSpawnEnv', () => {
   it('merges extra env without dropping PATH handling', () => {
@@ -21,25 +22,38 @@ describe('defaultSpawnEnv', () => {
 
 describe('resolveExecutable', () => {
   it('prefers a Windows .cmd shim when present on PATH', () => {
-    const fakeBinDir = path.join(os.tmpdir(), 'viba-agent-common-test-bin');
-    const env = {
-      PATH: fakeBinDir,
-    } as NodeJS.ProcessEnv;
-
-    const originalExistsSync = require('node:fs').existsSync as (candidate: string) => boolean;
-    const seenCandidates: string[] = [];
-
-    require('node:fs').existsSync = ((candidate: string) => {
-      seenCandidates.push(candidate);
-      return candidate === path.join(fakeBinDir, 'codex.cmd');
-    }) as typeof originalExistsSync;
+    const fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'viba-agent-common-test-bin-'));
+    const env = { PATH: fakeBinDir } as NodeJS.ProcessEnv;
 
     try {
+      fs.writeFileSync(path.join(fakeBinDir, 'codex.cmd'), '', 'utf8');
       const resolved = resolveExecutable(['codex', 'codex.cmd'], env);
-      assert.strictEqual(resolved, path.join(fakeBinDir, 'codex.cmd'));
-      assert.ok(seenCandidates.includes(path.join(fakeBinDir, 'codex.cmd')));
+      assert.strictEqual(resolved.toLowerCase(), path.join(fakeBinDir, 'codex.cmd').toLowerCase());
     } finally {
-      require('node:fs').existsSync = originalExistsSync;
+      fs.rmSync(fakeBinDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('prepareSpawnCommand', () => {
+  it('wraps Windows command shims with cmd.exe', () => {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    const prepared = prepareSpawnCommand(
+      'C:\\tools\\codex.cmd',
+      ['exec', '--output', 'C:\\Program Files\\Palx\\last-message.txt'],
+      { ComSpec: 'C:\\Windows\\System32\\cmd.exe' } as NodeJS.ProcessEnv,
+    );
+
+    assert.strictEqual(prepared.command, 'C:\\Windows\\System32\\cmd.exe');
+    assert.deepStrictEqual(prepared.args, [
+      '/d',
+      '/s',
+      '/c',
+      'C:\\tools\\codex.cmd exec --output "C:\\Program Files\\Palx\\last-message.txt"',
+    ]);
+    assert.strictEqual(prepared.windowsVerbatimArguments, true);
   });
 });

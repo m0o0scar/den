@@ -1474,6 +1474,24 @@ async function syncStartupCommandForProvision(
   agentCli?: string,
 ): Promise<ProvisionedSessionWorkspace> {
   const normalizedStartupScript = normalizeStartupScript(startupScript);
+  const persistenceMode = resolveStartupCommandPersistenceMode();
+
+  if (persistenceMode === 'shell') {
+    // In shell mode we cannot reattach the visible startup terminal to a hidden
+    // background process, so prelaunching here causes duplicate startup runs.
+    if (provision.startupCommandSignature) {
+      await terminateProvisionedStartupCommand(provision);
+      return {
+        ...provision,
+        startupCommandSignature: undefined,
+        startupCommandMode: undefined,
+        startupCommandProcessPid: undefined,
+      };
+    }
+
+    return provision;
+  }
+
   if (!normalizedStartupScript) {
     if (provision.startupCommandSignature) {
       await terminateProvisionedStartupCommand(provision);
@@ -2956,6 +2974,30 @@ export async function stopSessionDevServer(sessionName: string): Promise<{
     };
   } catch (error) {
     console.error('Failed to stop session dev server:', error);
+    return {
+      success: false,
+      error: getErrorMessage(error),
+    };
+  }
+}
+
+export async function terminateSessionStartupScript(
+  sessionName: string,
+): Promise<{ success: boolean; stopped?: boolean; error?: string }> {
+  try {
+    const metadata = await getSessionMetadata(sessionName);
+    if (!metadata) {
+      return { success: false, error: 'Session metadata not found' };
+    }
+
+    const projectKey = getSessionProjectKey(metadata.projectId, metadata.projectPath);
+    const result = await stopTrackedSessionProcess(projectKey, sessionName, 'startup-script');
+    return {
+      success: true,
+      stopped: result.stopped || !result.process,
+    };
+  } catch (error) {
+    console.error('Failed to stop session startup script:', error);
     return {
       success: false,
       error: getErrorMessage(error),

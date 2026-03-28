@@ -114,8 +114,11 @@ function buildProviderCommand({
       .join(' ');
   }
 
+  const codexExecutable = shellKind === 'powershell'
+    ? 'codex'
+    : 'NO_COLOR=1 FORCE_COLOR=0 TERM=xterm codex';
   const codexCommand = [
-    'NO_COLOR=1 FORCE_COLOR=0 TERM=xterm codex',
+    codexExecutable,
     ...codexArgs,
     normalizedModel
       ? `--model ${quoteShellArg(normalizedModel, shellKind)}`
@@ -174,8 +177,11 @@ function buildInteractiveProviderCommand(
       .join(' ');
   }
 
+  const codexExecutable = shellKind === 'powershell'
+    ? 'codex'
+    : 'NO_COLOR=1 FORCE_COLOR=0 TERM=xterm codex';
   return [
-    'NO_COLOR=1 FORCE_COLOR=0 TERM=xterm codex',
+    codexExecutable,
     '-a never',
     '-s danger-full-access',
     normalizedModel
