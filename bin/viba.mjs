@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "../src/lib/cli-args.mjs";
 import { syncNextNativeShims } from "../src/lib/next-native-shims.mjs";
+import { cleanupOrphanNextServers, startOrphanNextServerCleanupLoop } from "../src/lib/orphan-next-servers.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -612,27 +613,40 @@ async function main() {
       ensureOptionalCommandInstalled("terminal-notifier");
     }
     ensureCodexSkillsInstalled();
+    await cleanupOrphanNextServers({ appRoot: APP_ROOT, protectPorts: [DEFAULT_PORT] });
 
     const { port, preferredPort } = await resolveStartupPort(options);
     if (port !== preferredPort) {
       console.log(`Port ${preferredPort} is in use. Using ${port} instead.`);
     }
 
-    if (options.mode === "dev") {
-      const url = `http://localhost:${port}`;
-      console.log(`Starting Den in development mode on ${url}`);
-      const nextPromise = runNext(getDevServerArgs(port), { ...process.env, PALX_APP_URL: url });
-      void autoOpenBrowserWhenReady(url, port, options.mode);
-      process.exit(await nextPromise);
-    }
+    const cleanupLoop = startOrphanNextServerCleanupLoop({
+      appRoot: APP_ROOT,
+      protectPorts: Array.from(new Set([DEFAULT_PORT, port])),
+      logger: console,
+    });
 
-    ensureBuildExists();
-    syncNextNativeShims(APP_ROOT);
-    const url = `http://localhost:${port}`;
-    console.log(`Starting Den on ${url}`);
-    const nextPromise = runNext(["start", "-p", String(port)], { ...process.env, PALX_APP_URL: url });
-    void autoOpenBrowserWhenReady(url, port, options.mode);
-    process.exit(await nextPromise);
+    let exitCode = 0;
+    try {
+      if (options.mode === "dev") {
+        const url = `http://localhost:${port}`;
+        console.log(`Starting Den in development mode on ${url}`);
+        const nextPromise = runNext(getDevServerArgs(port), { ...process.env, PALX_APP_URL: url });
+        void autoOpenBrowserWhenReady(url, port, options.mode);
+        exitCode = await nextPromise;
+      } else {
+        ensureBuildExists();
+        syncNextNativeShims(APP_ROOT);
+        const url = `http://localhost:${port}`;
+        console.log(`Starting Den on ${url}`);
+        const nextPromise = runNext(["start", "-p", String(port)], { ...process.env, PALX_APP_URL: url });
+        void autoOpenBrowserWhenReady(url, port, options.mode);
+        exitCode = await nextPromise;
+      }
+    } finally {
+      cleanupLoop.stop();
+    }
+    process.exit(exitCode);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Den failed to start: ${errorMessage}`);
