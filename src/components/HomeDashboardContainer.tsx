@@ -46,6 +46,8 @@ import type { Credential } from '@/lib/credentials';
 import {
   findClientProjectByReference,
   getClientProjectCompatibilityKeys,
+  resolveCanonicalProjectReference,
+  resolveClientActivityProjectKey,
   resolveClientProjectReference,
   resolveClientRecentProjects,
 } from '@/lib/project-client';
@@ -225,25 +227,19 @@ export default function HomeDashboardContainer({
     findClientProjectByReference(projects, projectReference)
   ), [projects]);
 
-  const resolveActivityProjectKey = useCallback((
-    projectId?: string,
-    projectPath?: string,
-    fallbackPath?: string,
-  ): string => {
-    const candidateReferences = [projectPath, projectId, fallbackPath];
+  const buildNewSessionProjectQuery = useCallback((projectReference: string): string | null => {
+    const canonicalReference = resolveCanonicalProjectReference(projects, projectReference);
+    if (!canonicalReference) return null;
 
-    for (const candidateReference of candidateReferences) {
-      const trimmedReference = candidateReference?.trim();
-      if (!trimmedReference) continue;
-
-      const resolvedReference = resolveProjectEntry(trimmedReference);
-      if (resolvedReference.project) {
-        return resolvedReference.key;
-      }
+    const resolvedProject = resolveProjectEntry(canonicalReference);
+    const params = new URLSearchParams();
+    if (resolvedProject.project?.id) {
+      params.set('projectId', resolvedProject.project.id);
+    } else {
+      params.set('project', canonicalReference);
     }
-
-    return fallbackPath?.trim() || projectPath?.trim() || projectId?.trim() || '';
-  }, [resolveProjectEntry]);
+    return params.toString();
+  }, [projects, resolveProjectEntry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -405,7 +401,12 @@ export default function HomeDashboardContainer({
       setConfig(nextConfig);
 
       if (options?.navigateToNewInHome !== false) {
-        router.push(`/new?project=${encodeURIComponent(resolvedProject.sessionReference)}`);
+        const nextProjectQuery = buildNewSessionProjectQuery(resolvedProject.sessionReference);
+        if (!nextProjectQuery) {
+          setError('Failed to open project.');
+          return false;
+        }
+        router.push(`/new?${nextProjectQuery}`);
       }
 
       return true;
@@ -414,7 +415,7 @@ export default function HomeDashboardContainer({
       setError('Failed to open project.');
       return false;
     }
-  }, [config, resolveProjectEntry, router]);
+  }, [buildNewSessionProjectQuery, config, resolveProjectEntry, router]);
 
   const dismissRepoSettingsDialog = useCallback(() => {
     if (isSavingRepoSettings) return;
@@ -937,34 +938,46 @@ export default function HomeDashboardContainer({
   const runningSessionCountByProject = useMemo(() => {
     const counts = new Map<string, number>();
     for (const session of allSessions) {
-      const projectKey = resolveActivityProjectKey(session.projectId, session.projectPath, session.repoPath);
+      const projectKey = resolveClientActivityProjectKey(projects, {
+        projectId: session.projectId,
+        projectPath: session.projectPath,
+        fallbackPath: session.repoPath,
+      });
       if (!projectKey) continue;
       counts.set(projectKey, (counts.get(projectKey) ?? 0) + 1);
     }
     return counts;
-  }, [allSessions, resolveActivityProjectKey]);
+  }, [allSessions, projects]);
 
   const latestRunningSessionIdByProject = useMemo(() => {
     const sessionIds = new Map<string, string>();
     for (const session of allSessions) {
-      const projectKey = resolveActivityProjectKey(session.projectId, session.projectPath, session.repoPath);
+      const projectKey = resolveClientActivityProjectKey(projects, {
+        projectId: session.projectId,
+        projectPath: session.projectPath,
+        fallbackPath: session.repoPath,
+      });
       if (!projectKey) continue;
       if (!sessionIds.has(projectKey)) {
         sessionIds.set(projectKey, session.sessionName);
       }
     }
     return sessionIds;
-  }, [allSessions, resolveActivityProjectKey]);
+  }, [allSessions, projects]);
 
   const draftCountByProject = useMemo(() => {
     const counts = new Map<string, number>();
     for (const draft of allDrafts) {
-      const projectKey = resolveActivityProjectKey(draft.projectId, draft.projectPath, draft.repoPath);
+      const projectKey = resolveClientActivityProjectKey(projects, {
+        projectId: draft.projectId,
+        projectPath: draft.projectPath,
+        fallbackPath: draft.repoPath,
+      });
       if (!projectKey) continue;
       counts.set(projectKey, (counts.get(projectKey) ?? 0) + 1);
     }
     return counts;
-  }, [allDrafts, resolveActivityProjectKey]);
+  }, [allDrafts, projects]);
 
   const getProjectDisplayName = useCallback((projectReference: string): string => (
     resolveProjectEntry(projectReference).displayName

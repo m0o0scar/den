@@ -3,8 +3,7 @@ import { AppPageSurface } from '@/components/app-shell/AppPageSurface';
 import NewSessionComposer from '@/components/NewSessionComposer';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { getProjects } from '@/lib/store';
-import { resolveClientProjectReference } from '@/lib/project-client';
+import { resolveNewSessionProjectReference } from '@/lib/new-session-route';
 
 export const metadata: Metadata = {
   title: 'New Session',
@@ -135,11 +134,8 @@ type NewSessionPageProps = {
   }>;
 };
 
-function resolveProjectParamToReference(projectReference?: string | null): string | null {
-  const trimmedReference = projectReference?.trim();
-  if (!trimmedReference) return null;
-
-  return resolveClientProjectReference(getProjects(), trimmedReference).sessionReference;
+export function resolveProjectParamToReference(projectReference?: string | null): string | null {
+  return resolveNewSessionProjectReference(projectReference);
 }
 
 export default async function NewSessionPage({
@@ -157,13 +153,13 @@ export default async function NewSessionPage({
   const prefillFromSession = Array.isArray(prefillParam)
     ? prefillParam[0]
     : prefillParam;
-  const projectPath = resolveProjectParamToReference(projectIdFromParam ?? projectPathFromParam);
+  const projectReference = resolveProjectParamToReference(projectIdFromParam ?? projectPathFromParam);
 
   return (
     <AppPageSurface contentClassName="flex min-h-screen flex-col items-center p-4 md:p-6">
       <main className="flex w-full flex-col items-center">
         <NewSessionComposer
-          projectPath={projectPath ?? null}
+          projectPath={projectReference ?? null}
           fromRepoName={fromName ?? null}
           prefillFromSession={prefillFromSession ?? null}
           predefinedPrompts={predefinedPrompts}

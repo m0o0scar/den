@@ -25,6 +25,20 @@ export type SessionTrackedProcess = {
   startedAt: string;
 };
 
+export type SessionTrackedProcessStopResult = {
+  role: SessionTrackedProcessRole;
+  pid: number;
+  processGroupId?: number;
+  stopped: boolean;
+  stillAlive: boolean;
+};
+
+export type StopAllTrackedSessionProcessesResult = {
+  success: boolean;
+  stopped: SessionTrackedProcessStopResult[];
+  failures: SessionTrackedProcessStopResult[];
+};
+
 type ProcessRegistryPayload = {
   processes: SessionTrackedProcess[];
 };
@@ -358,22 +372,54 @@ export async function stopTrackedSessionProcess(
   return { stopped, process: processEntry };
 }
 
+export async function clearTrackedSessionProcessLog(
+  projectPath: string,
+  sessionName: string,
+  role: SessionTrackedProcessRole,
+): Promise<void> {
+  const logPath = getTrackedProcessLogPath(projectPath, sessionName, role);
+  await fs.mkdir(path.dirname(logPath), { recursive: true });
+  await fs.writeFile(logPath, '', 'utf-8');
+}
+
 export async function stopAllTrackedSessionProcesses(
   projectPath: string,
   sessionName: string,
   roles?: SessionTrackedProcessRole[],
-): Promise<void> {
+): Promise<StopAllTrackedSessionProcessesResult> {
   const processes = await listTrackedSessionProcesses(projectPath, sessionName);
+  const stopped: SessionTrackedProcessStopResult[] = [];
+  const failures: SessionTrackedProcessStopResult[] = [];
+
   for (const processEntry of processes) {
     if (roles && !roles.includes(processEntry.role)) continue;
-    const stopped = await terminateProcessGracefully({
+    const didStop = await terminateProcessGracefully({
       pid: processEntry.pid,
       processGroupId: processEntry.processGroupId,
     });
-    if (stopped || !isProcessAlive(processEntry.pid)) {
+    const stillAlive = isProcessAlive(processEntry.pid);
+    const result: SessionTrackedProcessStopResult = {
+      role: processEntry.role,
+      pid: processEntry.pid,
+      processGroupId: processEntry.processGroupId,
+      stopped: didStop,
+      stillAlive,
+    };
+
+    if (!stillAlive) {
       await clearTrackedSessionProcess(projectPath, sessionName, processEntry.role);
+      stopped.push(result);
+      continue;
     }
+
+    failures.push(result);
   }
+
+  return {
+    success: failures.length === 0,
+    stopped,
+    failures,
+  };
 }
 
 export async function launchTrackedSessionProcess(

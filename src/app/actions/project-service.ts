@@ -7,6 +7,7 @@ import { getConfig } from './config.ts';
 import { buildTerminalProcessEnv } from '../../lib/terminal-process-env.ts';
 import { getProjectPrimaryFolderPath } from '../../lib/project-folders.ts';
 import {
+  clearTrackedSessionProcessLog,
   getTrackedSessionProcess,
   launchTrackedSessionProcess,
   readTrackedSessionProcessLog,
@@ -225,6 +226,11 @@ export async function stopProjectService(projectReference: string): Promise<{
       'project-service',
     );
     if (!currentProcess) {
+      await clearTrackedSessionProcessLog(
+        resolved.projectId,
+        PROJECT_SERVICE_SESSION_NAME,
+        'project-service',
+      );
       return {
         success: true,
         status: { configured: Boolean(resolved.serviceStartCommand), running: false },
@@ -261,6 +267,12 @@ export async function stopProjectService(projectReference: string): Promise<{
         'project-service',
       );
     }
+
+    await clearTrackedSessionProcessLog(
+      resolved.projectId,
+      PROJECT_SERVICE_SESSION_NAME,
+      'project-service',
+    );
 
     return {
       success: true,

@@ -40,6 +40,12 @@ export type GitBranch = {
 };
 
 export type SupportedAgentCli = 'codex';
+export type SessionTerminalTerminationResult = {
+  success: boolean;
+  terminatedSessions: string[];
+  lingeringSessions: string[];
+  error?: string;
+};
 
 type AgentCliConfig = {
   executable: string;
@@ -1052,36 +1058,70 @@ export async function terminateTmuxSessionRole(
   }
 }
 
-export async function terminateSessionTerminalSessions(sessionName: string): Promise<void> {
+async function listSessionTmuxSessions(sessionName: string): Promise<string[]> {
   if (process.platform === 'win32' || !isCommandAvailable('tmux')) {
-    return;
+    return [];
+  }
+
+  const { spawnSync } = await import('child_process');
+  const terminalEnv = buildTerminalProcessEnv();
+  const prefixRole = '__viba_session_role__';
+  const prefix = getTmuxSessionName(sessionName, prefixRole).replace(prefixRole, '');
+  const listedSessions = spawnSync('tmux', ['list-sessions', '-F', '#S'], {
+    stdio: ['ignore', 'pipe', 'ignore'],
+    env: terminalEnv as NodeJS.ProcessEnv,
+    encoding: 'utf-8',
+  });
+
+  const sessions = typeof listedSessions.stdout === 'string'
+    ? listedSessions.stdout.split('\n').map((value) => value.trim()).filter(Boolean)
+    : [];
+
+  return sessions.filter((tmuxSession) => tmuxSession.startsWith(prefix));
+}
+
+export async function terminateSessionTerminalSessions(sessionName: string): Promise<SessionTerminalTerminationResult> {
+  if (process.platform === 'win32' || !isCommandAvailable('tmux')) {
+    return {
+      success: true,
+      terminatedSessions: [],
+      lingeringSessions: [],
+    };
   }
 
   try {
     const { spawnSync } = await import('child_process');
     const terminalEnv = buildTerminalProcessEnv();
-
-    const prefixRole = '__viba_session_role__';
-    const prefix = getTmuxSessionName(sessionName, prefixRole).replace(prefixRole, '');
-    const listedSessions = spawnSync('tmux', ['list-sessions', '-F', '#S'], {
-      stdio: ['ignore', 'pipe', 'ignore'],
-      env: terminalEnv as NodeJS.ProcessEnv,
-      encoding: 'utf-8',
-    });
-
-    const sessions = typeof listedSessions.stdout === 'string'
-      ? listedSessions.stdout.split('\n').map((value) => value.trim()).filter(Boolean)
-      : [];
+    const sessions = await listSessionTmuxSessions(sessionName);
+    const terminatedSessions: string[] = [];
 
     for (const tmuxSession of sessions) {
-      if (!tmuxSession.startsWith(prefix)) continue;
-      spawnSync('tmux', ['kill-session', '-t', tmuxSession], {
+      const result = spawnSync('tmux', ['kill-session', '-t', tmuxSession], {
         stdio: 'ignore',
         env: terminalEnv as NodeJS.ProcessEnv,
       });
+      if (typeof result.status === 'number' && result.status === 0) {
+        terminatedSessions.push(tmuxSession);
+      }
     }
+
+    const lingeringSessions = await listSessionTmuxSessions(sessionName);
+    return {
+      success: lingeringSessions.length === 0,
+      terminatedSessions,
+      lingeringSessions,
+      error: lingeringSessions.length > 0
+        ? `Failed to terminate tmux sessions: ${lingeringSessions.join(', ')}`
+        : undefined,
+    };
   } catch (error) {
     console.error('Failed to terminate session terminal sessions:', error);
+    return {
+      success: false,
+      terminatedSessions: [],
+      lingeringSessions: [],
+      error: 'Failed to terminate session terminal sessions.',
+    };
   }
 }
 

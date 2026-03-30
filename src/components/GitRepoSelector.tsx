@@ -46,7 +46,11 @@ import {
   type HomeProjectGitRepo,
 } from '@/lib/home-project-git';
 import { getBaseName } from '@/lib/path';
-import { resolveClientProjectReference } from '@/lib/project-client';
+import {
+  resolveCanonicalProjectReference,
+  resolveClientActivityProjectKey,
+  resolveClientProjectReference,
+} from '@/lib/project-client';
 import { buildRepoMentionSuggestions } from '@/lib/repo-mention-suggestions';
 import { buildSkillMentionSuggestions } from '@/lib/skill-mention-suggestions';
 import { doesSessionPrefillMatchProject } from '@/lib/session-prefill';
@@ -998,7 +1002,7 @@ export default function GitRepoSelector({
     options?: { navigateToNewInHome?: boolean },
   ) => {
     const resolvedProject = resolveProjectEntry(path);
-    const sessionReference = resolvedProject.sessionReference ?? path;
+    const sessionReference = resolvedProject.project?.id ?? resolvedProject.sessionReference ?? path;
     const maybeProjectId = !resolvedProject.project && !looksLikeAbsolutePath(path);
 
     setLoading(true);
@@ -1028,7 +1032,7 @@ export default function GitRepoSelector({
       if (!config) {
         setConfig(currentConfig);
       }
-      const currentRecentProjects = currentConfig.recentRepos ?? currentConfig.recentProjects;
+      const currentRecentProjects = currentConfig.recentProjects ?? currentConfig.recentRepos;
       let newRecent = [...currentRecentProjects];
       if (!newRecent.includes(sessionReference)) {
         newRecent.unshift(sessionReference);
@@ -1039,7 +1043,7 @@ export default function GitRepoSelector({
 
       const nextConfig = arePathListsEqual(newRecent, currentRecentProjects)
         ? currentConfig
-        : await updateConfig({ recentRepos: newRecent });
+        : await updateConfig({ recentProjects: newRecent });
       if (
         selectedProjectRequestId !== undefined
         && !isActiveSelectedProjectLoad(selectedProjectRequestId)
@@ -1051,7 +1055,14 @@ export default function GitRepoSelector({
       setIsBrowsing(false);
 
       if (mode === 'home' && options?.navigateToNewInHome !== false) {
-        router.push(`/new?project=${encodeURIComponent(sessionReference)}`);
+        const params = new URLSearchParams();
+        const projectId = registeredProject?.id ?? resolvedProject.project?.id;
+        if (projectId) {
+          params.set('projectId', projectId);
+        } else {
+          params.set('project', sessionReference);
+        }
+        router.push(`/new?${params.toString()}`);
         return true;
       }
 
@@ -1153,8 +1164,13 @@ export default function GitRepoSelector({
       return;
     }
 
+    const resolvedNextProject = resolveProjectEntry(nextRepo);
     const params = new URLSearchParams();
-    params.set('project', nextRepo);
+    if (resolvedNextProject.project?.id) {
+      params.set('projectId', resolvedNextProject.project.id);
+    } else {
+      params.set('project', nextRepo);
+    }
     if (prefillFromSession) {
       params.set('prefillFromSession', prefillFromSession);
     }
@@ -1512,7 +1528,11 @@ export default function GitRepoSelector({
       }
 
       const params = new URLSearchParams();
-      params.set('project', result.projectPath);
+      if (result.projectId) {
+        params.set('projectId', result.projectId);
+      } else {
+        params.set('project', result.projectPath);
+      }
       if (prefillFromSession) {
         params.set('prefillFromSession', prefillFromSession);
       }
@@ -2026,9 +2046,9 @@ export default function GitRepoSelector({
   const handleRemoveRecent = async (e: React.MouseEvent, repo: string) => {
     e.stopPropagation();
     if (config) {
-      const currentRecentProjects = config.recentRepos ?? config.recentProjects;
+      const currentRecentProjects = config.recentProjects ?? config.recentRepos;
       const newRecent = currentRecentProjects.filter((project) => project !== repo);
-      const newConfig = await updateConfig({ recentRepos: newRecent });
+      const newConfig = await updateConfig({ recentProjects: newRecent });
       setConfig(newConfig);
     }
   };
@@ -2867,7 +2887,17 @@ export default function GitRepoSelector({
 
   const handleNewAttemptFromSession = (session: SessionMetadata) => {
     if (!selectedRepo) return;
-    const nextUrl = `/new?project=${encodeURIComponent(selectedRepo)}&prefillFromSession=${encodeURIComponent(session.sessionName)}`;
+    const nextProjectReference = resolveCanonicalProjectReference(projects, selectedRepo);
+    if (!nextProjectReference) return;
+
+    const params = new URLSearchParams();
+    if (resolvedSelectedProject?.project?.id) {
+      params.set('projectId', resolvedSelectedProject.project.id);
+    } else {
+      params.set('project', nextProjectReference);
+    }
+    params.set('prefillFromSession', session.sessionName);
+    const nextUrl = `/new?${params.toString()}`;
     router.push(nextUrl);
   };
 
@@ -2905,25 +2935,33 @@ export default function GitRepoSelector({
   const runningSessionCountByProject = useMemo(() => {
     const counts = new Map<string, number>();
     for (const session of allSessions) {
-      const projectKey = session.projectPath || session.repoPath;
+      const projectKey = resolveClientActivityProjectKey(projects, {
+        projectId: session.projectId,
+        projectPath: session.projectPath,
+        fallbackPath: session.repoPath,
+      });
       if (!projectKey) continue;
       counts.set(projectKey, (counts.get(projectKey) ?? 0) + 1);
     }
     return counts;
-  }, [allSessions]);
+  }, [allSessions, projects]);
 
   const draftCountByProject = useMemo(() => {
     const counts = new Map<string, number>();
     for (const draft of allDrafts) {
-      const projectKey = draft.projectPath || draft.repoPath;
+      const projectKey = resolveClientActivityProjectKey(projects, {
+        projectId: draft.projectId,
+        projectPath: draft.projectPath,
+        fallbackPath: draft.repoPath,
+      });
       if (!projectKey) continue;
       counts.set(projectKey, (counts.get(projectKey) ?? 0) + 1);
     }
     return counts;
-  }, [allDrafts]);
+  }, [allDrafts, projects]);
 
   const recentProjects = useMemo(
-    () => config?.recentRepos ?? config?.recentProjects ?? [],
+    () => config?.recentProjects ?? config?.recentRepos ?? [],
     [config?.recentProjects, config?.recentRepos],
   );
 
@@ -2973,36 +3011,36 @@ export default function GitRepoSelector({
     : recentProjects;
 
   const discoverHomeProjectRepos = useCallback(async (
-    projectPath: string,
+    projectReference: string,
     options: { force?: boolean } = {},
   ): Promise<HomeProjectGitRepo[]> => {
-    const cached = projectGitReposByPath[projectPath];
+    const cached = projectGitReposByPath[projectReference];
     if (cached && !options.force) {
       return cached;
     }
 
-    setDiscoveringHomeProjectGitRepos((previous) => ({ ...previous, [projectPath]: true }));
+    setDiscoveringHomeProjectGitRepos((previous) => ({ ...previous, [projectReference]: true }));
     try {
-      const discovery = await discoverProjectGitRepos(projectPath);
+      const discovery = await discoverProjectGitRepos(projectReference);
       const repos = toHomeProjectGitRepos(discovery.repos);
-      setProjectGitReposByPath((previous) => ({ ...previous, [projectPath]: repos }));
+      setProjectGitReposByPath((previous) => ({ ...previous, [projectReference]: repos }));
       return repos;
     } catch (discoverError) {
       console.error('Failed to discover project git repos:', discoverError);
-      setProjectGitReposByPath((previous) => ({ ...previous, [projectPath]: [] }));
+      setProjectGitReposByPath((previous) => ({ ...previous, [projectReference]: [] }));
       return [];
     } finally {
-      setDiscoveringHomeProjectGitRepos((previous) => ({ ...previous, [projectPath]: false }));
+      setDiscoveringHomeProjectGitRepos((previous) => ({ ...previous, [projectReference]: false }));
     }
   }, [projectGitReposByPath]);
 
-  const handleOpenProjectGitWorkspace = useCallback(async (projectPath: string, sourceRepoPath?: string) => {
+  const handleOpenProjectGitWorkspace = useCallback(async (projectReference: string, sourceRepoPath?: string) => {
     if (sourceRepoPath?.trim()) {
       router.push(`/git?path=${encodeURIComponent(sourceRepoPath)}`);
       return;
     }
 
-    const repos = await discoverHomeProjectRepos(projectPath);
+    const repos = await discoverHomeProjectRepos(projectReference);
     if (repos.length === 0) {
       setError('No Git repositories were found in this project.');
       return;
@@ -3011,7 +3049,7 @@ export default function GitRepoSelector({
       router.push(`/git?path=${encodeURIComponent(repos[0].repoPath)}`);
       return;
     }
-    setHomeProjectGitSelector({ projectPath, repos });
+    setHomeProjectGitSelector({ projectPath: projectReference, repos });
   }, [discoverHomeProjectRepos, router]);
 
   useEffect(() => {
@@ -3075,51 +3113,62 @@ export default function GitRepoSelector({
     if (mode !== 'home') return;
 
     const inFlightResolutions = repoCardIconResolutionsInFlightRef.current;
-    const reposToResolve = recentProjects.filter((repo) => (
-      !(repo in repoCardIconByRepo)
-      && !inFlightResolutions.has(repo)
+    const reposToResolve = recentProjects.filter((projectReference) => (
+      !(projectReference in repoCardIconByRepo)
+      && !inFlightResolutions.has(projectReference)
     ));
 
     if (reposToResolve.length === 0) return;
 
     let cancelled = false;
-    reposToResolve.forEach((repo) => {
-      inFlightResolutions.add(repo);
+    reposToResolve.forEach((projectReference) => {
+      inFlightResolutions.add(projectReference);
     });
 
     void (async () => {
-      const resolutionEntries = await Promise.all(reposToResolve.map(async (repo) => {
+      const resolutionEntries = await Promise.all(reposToResolve.map(async (projectReference) => {
+        const resolvedProject = resolveProjectEntry(projectReference);
+        const iconReferencePath = resolvedProject.primaryPath;
+
+        if (resolvedProject.project?.iconPath?.trim()) {
+          return [projectReference, resolvedProject.project.iconPath.trim()] as const;
+        }
+
+        if (!iconReferencePath) {
+          return [projectReference, null] as const;
+        }
+
         try {
-          const result = await resolveRepoCardIcon(repo);
-          return [repo, result.success ? result.iconPath : null] as const;
+          const result = await resolveRepoCardIcon(iconReferencePath);
+          return [projectReference, result.success ? result.iconPath : null] as const;
         } catch (error) {
           console.error('Failed to resolve project icon:', error);
-          return [repo, null] as const;
+          return [projectReference, null] as const;
         }
       }));
 
       if (!cancelled) {
         setRepoCardIconByRepo((previous) => {
           const next = { ...previous };
-          for (const [repo, iconPath] of resolutionEntries) {
-            next[repo] = iconPath;
+          for (const [projectReference, iconPath] of resolutionEntries) {
+            next[projectReference] = iconPath;
           }
           return next;
         });
       }
 
-      reposToResolve.forEach((repo) => {
-        inFlightResolutions.delete(repo);
+      reposToResolve.forEach((projectReference) => {
+        inFlightResolutions.delete(projectReference);
       });
     })();
 
     return () => {
       cancelled = true;
-      reposToResolve.forEach((repo) => {
-        inFlightResolutions.delete(repo);
+      reposToResolve.forEach((projectReference) => {
+        inFlightResolutions.delete(projectReference);
       });
     };
-  }, [mode, recentProjects, repoCardIconByRepo]);
+  }, [mode, recentProjects, repoCardIconByRepo, resolveProjectEntry]);
 
   const currentThemeModeIndex = THEME_MODE_SEQUENCE.indexOf(themeMode);
   const nextThemeMode = THEME_MODE_SEQUENCE[(currentThemeModeIndex + 1) % THEME_MODE_SEQUENCE.length];

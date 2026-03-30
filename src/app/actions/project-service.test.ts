@@ -45,8 +45,18 @@ after(async () => {
 });
 
 describe('project service manager', () => {
-  it('starts, reports, logs, and stops a managed project service', async () => {
+  it('clears persisted service output after stop and restart', async () => {
     const projectRoot = path.join(tempHome, 'service-project');
+    const counterPath = path.join(projectRoot, 'service-run-count.txt');
+    const startScript = [
+      'const fs=require("node:fs");',
+      `const countPath=${JSON.stringify(counterPath)};`,
+      'const current=fs.existsSync(countPath)?Number(fs.readFileSync(countPath, "utf8")):0;',
+      'const next=current+1;',
+      'fs.writeFileSync(countPath, String(next));',
+      'console.log("service boot "+next);',
+      'setInterval(() => console.log("tick "+next), 200);',
+    ].join(' ');
     await mkdir(projectRoot, { recursive: true });
 
     const project = storeModule.addProject({
@@ -55,7 +65,7 @@ describe('project service manager', () => {
     });
 
     await configModule.updateProjectSettings(project.id, {
-      serviceStartCommand: 'node -e "console.log(\'service boot\'); setInterval(() => console.log(\'tick\'), 200)"',
+      serviceStartCommand: `node -e '${startScript}'`,
       serviceStopCommand: 'node -e "console.log(\'service stop command\')"',
     });
 
@@ -65,7 +75,7 @@ describe('project service manager', () => {
 
     await waitFor(async () => {
       const logResult = await projectServiceModule.getProjectServiceLog(project.id);
-      return Boolean(logResult.output?.includes('service boot'));
+      return Boolean(logResult.output?.includes('service boot 1'));
     });
 
     const statuses = await projectServiceModule.getProjectServiceStatuses([project.id]);
@@ -78,8 +88,28 @@ describe('project service manager', () => {
 
     await waitFor(async () => {
       const logResult = await projectServiceModule.getProjectServiceLog(project.id);
-      return Boolean(logResult.output?.includes('service stop command'));
+      return logResult.output === '';
     });
+
+    const stoppedLog = await projectServiceModule.getProjectServiceLog(project.id);
+    assert.equal(stoppedLog.output, '');
+
+    const restartResult = await projectServiceModule.restartProjectService(project.id);
+    assert.equal(restartResult.success, true);
+    assert.equal(restartResult.status?.running, true);
+
+    await waitFor(async () => {
+      const logResult = await projectServiceModule.getProjectServiceLog(project.id);
+      return Boolean(logResult.output?.includes('service boot 2'));
+    });
+
+    const restartedLog = await projectServiceModule.getProjectServiceLog(project.id);
+    assert.equal(restartedLog.output?.includes('service boot 1'), false);
+    assert.equal(restartedLog.output?.includes('service stop command'), false);
+    assert.equal(restartedLog.output?.includes('service boot 2'), true);
+
+    const finalStopResult = await projectServiceModule.stopProjectService(project.id);
+    assert.equal(finalStopResult.success, true);
 
     const finalStatuses = await projectServiceModule.getProjectServiceStatuses([project.id]);
     assert.equal(finalStatuses[project.id]?.running, false);

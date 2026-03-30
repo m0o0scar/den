@@ -5,13 +5,13 @@ import type { AgentProvider, ReasoningEffort } from './types.ts';
 
 const SESSION_AGENT_CODEX_BASE_FLAGS = [
   '-c approval_policy="never"',
-  '--color never',
   '--sandbox danger-full-access',
-  '--skip-git-repo-check',
 ];
 const SESSION_AGENT_CODEX_EXEC_FLAGS = [
   ...SESSION_AGENT_CODEX_BASE_FLAGS,
   'exec',
+  '--color never',
+  '--skip-git-repo-check',
   '-',
 ];
 const CONFLICT_AGENT_CODEX_FLAGS = [

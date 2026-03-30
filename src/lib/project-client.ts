@@ -74,7 +74,7 @@ export function resolveClientProjectReference(
 
   const primaryPath = getClientProjectPrimaryFolderPath(project);
   const folderCount = project.folderPaths.length;
-  const sessionReference = primaryPath || project.id;
+  const sessionReference = project.id;
   const secondaryLabel = primaryPath
     ? (folderCount > 1 ? `${primaryPath} (${folderCount} folders)` : primaryPath)
     : 'No folders associated';
@@ -91,6 +91,41 @@ export function resolveClientProjectReference(
     isOpenable: Boolean(sessionReference),
     compatibilityKeys: getClientProjectCompatibilityKeys(project),
   };
+}
+
+export function resolveCanonicalProjectReference(
+  projects: Project[],
+  reference?: string | null,
+): string | null {
+  const trimmedReference = reference?.trim();
+  if (!trimmedReference) return null;
+
+  const resolvedReference = resolveClientProjectReference(projects, trimmedReference);
+  return resolvedReference.project?.id ?? resolvedReference.sessionReference ?? trimmedReference;
+}
+
+export function resolveClientActivityProjectKey(
+  projects: Project[],
+  activity: {
+    projectId?: string;
+    projectPath?: string;
+    fallbackPath?: string;
+  },
+): string {
+  const candidateReferences = [
+    activity.projectId,
+    activity.projectPath,
+    activity.fallbackPath,
+  ];
+
+  for (const candidateReference of candidateReferences) {
+    const resolvedReference = resolveCanonicalProjectReference(projects, candidateReference);
+    if (resolvedReference) {
+      return resolvedReference;
+    }
+  }
+
+  return '';
 }
 
 export function resolveClientRecentProjects(

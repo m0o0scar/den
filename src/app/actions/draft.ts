@@ -2,7 +2,10 @@
 
 import path from 'node:path';
 import { getLocalDb } from '@/lib/local-db';
-import { findProjectByFolderPath, getProjectById } from '@/lib/store';
+import {
+  repairMissingDraftProjectIds,
+  resolveProjectActivityFilter,
+} from '@/lib/project-activity-server';
 import {
   normalizeNullableProviderReasoningEffort,
   normalizeProviderReasoningEffort,
@@ -216,21 +219,21 @@ export async function saveDraft(draft: DraftMetadata): Promise<{ success: boolea
   }
 }
 
-export async function listDrafts(projectPath?: string): Promise<DraftMetadata[]> {
+export async function listDrafts(projectReference?: string): Promise<DraftMetadata[]> {
   try {
+    repairMissingDraftProjectIds(projectReference);
+
     const db = getLocalDb();
-    const projectId = projectPath ? getProjectById(projectPath)?.id ?? null : null;
-    const resolvedProjectPath = projectPath && !projectId
-      ? (findProjectByFolderPath(projectPath)?.folderPaths[0] ?? projectPath)
-      : null;
-    const query = projectPath
+    const resolvedFilter = resolveProjectActivityFilter(projectReference);
+    const filterValue = resolvedFilter?.filterValue ?? null;
+    const query = projectReference
       ? `
         SELECT
           id, project_id, project_path, repo_path, branch_name, git_contexts_json, message,
           attachment_paths_json, agent_provider, model, reasoning_effort, timestamp, title,
           startup_script, dev_server_script, session_mode
         FROM drafts
-        WHERE ${projectId ? 'project_id = ?' : 'project_path = ?'}
+        WHERE ${resolvedFilter?.filterColumn === 'project_id' ? 'project_id = ?' : 'project_path = ?'}
         ORDER BY timestamp DESC
       `
       : `
@@ -242,8 +245,8 @@ export async function listDrafts(projectPath?: string): Promise<DraftMetadata[]>
         ORDER BY timestamp DESC
       `;
 
-    const rows = projectPath
-      ? (db.prepare(query).all(projectId ?? resolvedProjectPath) as DraftRow[])
+    const rows = projectReference && filterValue
+      ? (db.prepare(query).all(filterValue) as DraftRow[])
       : (db.prepare(query).all() as DraftRow[]);
 
     return rows.map(rowToDraft);

@@ -4,6 +4,8 @@ import {
   resolveClientProjectReference,
   resolveClientRecentProjects,
   getClientProjectCompatibilityKeys,
+  resolveCanonicalProjectReference,
+  resolveClientActivityProjectKey,
 } from './project-client.ts';
 
 describe('project-client compatibility keys', () => {
@@ -47,6 +49,16 @@ describe('project-client reference resolution', () => {
     assert.equal(resolved.secondaryLabel, 'No folders associated');
   });
 
+  it('uses the stored project id as the canonical session reference', () => {
+    const resolved = resolveClientProjectReference([{
+      id: 'project-123',
+      name: 'Canonical Project',
+      folderPaths: ['/tmp/test-project'],
+    }], '/tmp/test-project');
+
+    assert.equal(resolved.sessionReference, 'project-123');
+  });
+
   it('prefers the newest matching project when duplicate folder paths exist', () => {
     const duplicatePath = '/tmp/test-project';
     const resolved = resolveClientProjectReference([
@@ -68,5 +80,30 @@ describe('project-client reference resolution', () => {
     assert.equal(resolved.project?.id, 'project-newer');
     assert.equal(resolved.key, 'project-newer');
     assert.equal(resolved.displayName, 'Newer Project');
+  });
+});
+
+describe('project-client canonical reference resolution', () => {
+  const projects = [{
+    id: 'project-123',
+    name: 'Test Project',
+    folderPaths: ['/tmp/test-project', '/tmp/test-project-alt'],
+  }];
+
+  it('resolves legacy folder references to the stored project id', () => {
+    assert.equal(resolveCanonicalProjectReference(projects, '/tmp/test-project'), 'project-123');
+    assert.equal(resolveCanonicalProjectReference(projects, '/tmp/test-project-alt'), 'project-123');
+  });
+
+  it('resolves activity keys by project id before falling back to paths', () => {
+    assert.equal(resolveClientActivityProjectKey(projects, {
+      projectId: 'project-123',
+      projectPath: '/tmp/test-project',
+      fallbackPath: '/tmp/test-project',
+    }), 'project-123');
+
+    assert.equal(resolveClientActivityProjectKey(projects, {
+      projectPath: '/tmp/test-project-alt',
+    }), 'project-123');
   });
 });

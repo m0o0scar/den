@@ -10,12 +10,12 @@ import {
   readSessionLaunchContext,
 } from '@/app/actions/session';
 import { getAgentAdapter } from '@/lib/agent/providers';
-import { readCommandOutput } from '@/lib/agent/common';
 import {
-  collectDescendantProcesses,
-  parsePsProcessTable,
-  type RuntimeProcessEntry,
-} from '@/lib/agent/process-tree';
+  getAgentSessionManagerState,
+  listManagedRuntimeSubprocesses,
+  terminateManagedRuntimeProcesses,
+  type ActiveSessionRun,
+} from '@/lib/agent/session-run-state';
 import { resolveGitSessionEnvironments } from '@/lib/git-session-auth';
 import {
   listSessionHistory,
@@ -46,18 +46,6 @@ import type {
   SessionAgentRuntimeState,
 } from '@/lib/types';
 
-type ActiveRun = {
-  abortController: AbortController;
-  promise: Promise<void>;
-  diagnostics: SessionAgentTurnDiagnostics;
-  runtimePid: number | null;
-};
-
-type ManagerState = {
-  runs: Map<string, ActiveRun>;
-  lastDiagnostics: Map<string, SessionAgentTurnDiagnostics>;
-};
-
 type StartTurnInput = {
   sessionId: string;
   message: string;
@@ -72,21 +60,6 @@ export type SessionAgentRuntimeSubprocess = {
   state: string;
   command: string;
 };
-
-declare global {
-  var __palxAgentSessionManagerState: ManagerState | undefined;
-}
-
-function getManagerState(): ManagerState {
-  if (!globalThis.__palxAgentSessionManagerState) {
-    globalThis.__palxAgentSessionManagerState = {
-      runs: new Map(),
-      lastDiagnostics: new Map(),
-    };
-  }
-
-  return globalThis.__palxAgentSessionManagerState;
-}
 
 function normalizeText(value: string | null | undefined) {
   const normalized = value?.trim();
@@ -141,40 +114,7 @@ function createTurnDiagnostics(provider: AgentProvider, queuedAt: string): Sessi
   };
 }
 
-async function readRuntimeProcessTable(): Promise<RuntimeProcessEntry[]> {
-  if (process.platform === 'win32') {
-    return [];
-  }
-
-  const result = await readCommandOutput('ps', ['-axo', 'pid=,ppid=,state=,command=']);
-  if (result.exitCode !== 0) {
-    throw new Error(result.stderr || 'Failed to read runtime process table.');
-  }
-
-  return parsePsProcessTable(result.stdout);
-}
-
-async function terminateRuntimeDescendants(runtimePid: number | null): Promise<void> {
-  if (runtimePid === null || !Number.isInteger(runtimePid) || runtimePid <= 0) {
-    return;
-  }
-
-  try {
-    const processTable = await readRuntimeProcessTable();
-    const descendants = collectDescendantProcesses(processTable, runtimePid).sort((left, right) => right.pid - left.pid);
-    for (const entry of descendants) {
-      try {
-        await terminateProcessGracefully({ pid: entry.pid });
-      } catch (error) {
-        console.warn(`Failed to terminate lingering runtime subprocess ${entry.pid}:`, error);
-      }
-    }
-  } catch (error) {
-    console.warn(`Failed to inspect lingering subprocesses for runtime ${runtimePid}:`, error);
-  }
-}
-
-function toRuntimeSubprocess(entry: RuntimeProcessEntry): SessionAgentRuntimeSubprocess {
+function toRuntimeSubprocess(entry: { pid: number; ppid: number; state: string; command: string }): SessionAgentRuntimeSubprocess {
   return {
     pid: entry.pid,
     ppid: entry.ppid,
@@ -184,7 +124,7 @@ function toRuntimeSubprocess(entry: RuntimeProcessEntry): SessionAgentRuntimeSub
 }
 
 function getSessionTurnDiagnosticsSnapshot(sessionId: string): SessionAgentTurnDiagnostics | null {
-  const state = getManagerState();
+  const state = getAgentSessionManagerState();
   const diagnostics = state.runs.get(sessionId)?.diagnostics ?? state.lastDiagnostics.get(sessionId) ?? null;
   return diagnostics ? cloneTurnDiagnostics(diagnostics) : null;
 }
@@ -212,7 +152,7 @@ function updateRunDiagnostics(
   sessionId: string,
   updater: (diagnostics: SessionAgentTurnDiagnostics) => void,
 ): SessionAgentTurnDiagnostics | null {
-  const state = getManagerState();
+  const state = getAgentSessionManagerState();
   const activeRun = state.runs.get(sessionId);
   if (!activeRun) {
     return null;
@@ -724,7 +664,7 @@ async function publishDerivedNotification(
 }
 
 export function isSessionTurnRunning(sessionId: string) {
-  return getManagerState().runs.has(sessionId);
+  return getAgentSessionManagerState().runs.has(sessionId);
 }
 
 export async function listSessionTurnSubprocesses(sessionId: string): Promise<{
@@ -738,7 +678,7 @@ export async function listSessionTurnSubprocesses(sessionId: string): Promise<{
     return { success: false, error: 'sessionId is required.' };
   }
 
-  const activeRun = getManagerState().runs.get(normalizedSessionId);
+  const activeRun = getAgentSessionManagerState().runs.get(normalizedSessionId);
   if (!activeRun || !activeRun.runtimePid) {
     return {
       success: true,
@@ -748,8 +688,7 @@ export async function listSessionTurnSubprocesses(sessionId: string): Promise<{
   }
 
   try {
-    const processTable = await readRuntimeProcessTable();
-    const descendants = collectDescendantProcesses(processTable, activeRun.runtimePid)
+    const descendants = (await listManagedRuntimeSubprocesses(activeRun.runtimePid))
       .map(toRuntimeSubprocess);
 
     return {
@@ -782,14 +721,13 @@ export async function terminateSessionTurnSubprocess(
     return { success: false, error: 'pid must be a positive integer.' };
   }
 
-  const activeRun = getManagerState().runs.get(normalizedSessionId);
+  const activeRun = getAgentSessionManagerState().runs.get(normalizedSessionId);
   if (!activeRun || !activeRun.runtimePid) {
     return { success: false, error: 'No active runtime process is available for this session.' };
   }
 
   try {
-    const processTable = await readRuntimeProcessTable();
-    const descendants = collectDescendantProcesses(processTable, activeRun.runtimePid);
+    const descendants = await listManagedRuntimeSubprocesses(activeRun.runtimePid);
     const allowedPids = new Set(descendants.map((entry) => entry.pid));
     if (!allowedPids.has(pid)) {
       return {
@@ -838,7 +776,7 @@ export async function startSessionTurn(input: StartTurnInput): Promise<{
     return { success: false, error: 'message or attachmentPaths is required.' };
   }
 
-  const state = getManagerState();
+  const state = getAgentSessionManagerState();
   if (state.runs.has(sessionId)) {
     return { success: false, error: 'A turn is already running for this session.' };
   }
@@ -875,7 +813,7 @@ export async function startSessionTurn(input: StartTurnInput): Promise<{
   await publishSessionListUpdated();
 
   const abortController = new AbortController();
-  const activeRun: ActiveRun = {
+  const activeRun: ActiveSessionRun = {
     abortController,
     promise: Promise.resolve(),
     diagnostics,
@@ -958,7 +896,13 @@ export async function startSessionTurn(input: StartTurnInput): Promise<{
         await publishDerivedNotification(sessionId, failureEvent, projector.getLatestAssistantText());
       }
     } finally {
-      await terminateRuntimeDescendants(activeRun.runtimePid);
+      const termination = await terminateManagedRuntimeProcesses(activeRun.runtimePid);
+      for (const lingering of termination.lingeringSubprocesses) {
+        console.warn(`Failed to terminate lingering runtime subprocess ${lingering.pid}: ${lingering.command}`);
+      }
+      if (termination.runtimeStillAlive && activeRun.runtimePid) {
+        console.warn(`Failed to terminate runtime process ${activeRun.runtimePid}.`);
+      }
       state.runs.delete(sessionId);
       await publishSessionListUpdated();
     }
@@ -983,7 +927,7 @@ export async function cancelSessionTurn(sessionId: string): Promise<{
     return { success: false, error: 'sessionId is required.' };
   }
 
-  const active = getManagerState().runs.get(normalizedSessionId);
+  const active = getAgentSessionManagerState().runs.get(normalizedSessionId);
   if (!active) {
     return {
       success: true,

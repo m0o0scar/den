@@ -290,12 +290,10 @@ export async function discoverProjectGitReposWithBranches(projectIdOrPath: strin
   };
 }
 
-export async function getProjectActivity(projectIdOrPath: string): Promise<ProjectActivityResult> {
-  const resolvedProject = await resolveProjectReference(projectIdOrPath);
-
+export async function getProjectActivity(projectReference: string): Promise<ProjectActivityResult> {
   const [sessions, drafts] = await Promise.all([
-    resolvedProject.projectId ? listSessions(resolvedProject.projectId) : listSessions(resolvedProject.projectPath ?? undefined),
-    resolvedProject.projectId ? listDrafts(resolvedProject.projectId) : listDrafts(resolvedProject.projectPath ?? undefined),
+    listSessions(projectReference),
+    listDrafts(projectReference),
   ]);
 
   return { sessions, drafts };

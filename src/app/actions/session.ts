@@ -32,12 +32,19 @@ import {
   inferTrackedProcessPreviewUrl,
   launchTrackedSessionProcess,
   readTrackedDevServerState,
-  stopAllTrackedSessionProcesses,
   stopTrackedSessionProcess,
   terminateProcessGracefully,
 } from '@/lib/session-processes';
+import { shutdownSessionOwnedProcesses } from '@/lib/session-owned-processes';
 import { findProjectByFolderPath, getProjectById } from '@/lib/store';
-import { buildProjectFolderEntries, normalizeProjectFolderPath } from '@/lib/project-folders';
+import {
+  buildProjectFolderEntries,
+  normalizeProjectFolderPath,
+} from '@/lib/project-folders';
+import {
+  repairMissingSessionProjectIds,
+  resolveProjectActivityFilter,
+} from '@/lib/project-activity-server';
 import {
   resolveProjectWorkspacePreference,
   resolveStoredProjectSessionContext,
@@ -1953,12 +1960,15 @@ export async function getSessionMetadata(sessionName: string): Promise<SessionMe
   }
 }
 
-export async function listSessions(projectPath?: string): Promise<SessionMetadata[]> {
+export async function listSessions(projectReference?: string): Promise<SessionMetadata[]> {
   try {
+    repairMissingSessionProjectIds(projectReference);
+
     const db = getLocalDb();
-    const projectId = projectPath ? getProjectById(projectPath)?.id ?? null : null;
-    const filterColumn = projectPath ? (projectId ? 'project_id' : 'project_path') : null;
-    const query = projectPath
+    const resolvedFilter = resolveProjectActivityFilter(projectReference);
+    const filterColumn = resolvedFilter?.filterColumn ?? null;
+    const filterValue = resolvedFilter?.filterValue ?? null;
+    const query = projectReference
       ? `
         SELECT
           session_name, project_id, project_path, workspace_path, workspace_folders_json, workspace_mode, active_repo_path,
@@ -1979,8 +1989,8 @@ export async function listSessions(projectPath?: string): Promise<SessionMetadat
         ORDER BY timestamp DESC
       `;
 
-    const rows = projectPath
-      ? (db.prepare(query).all(projectId ?? projectPath) as SessionRow[])
+    const rows = projectReference && filterValue
+      ? (db.prepare(query).all(filterValue) as SessionRow[])
       : (db.prepare(query).all() as SessionRow[]);
 
     return Promise.all(rows.map((row) => rowToSessionMetadata(row)));
@@ -2997,43 +3007,71 @@ export async function terminateSessionStartupScript(
 }
 
 export async function deleteSession(sessionName: string): Promise<{ success: boolean; error?: string }> {
+  return await deleteSessionWithDependencies(sessionName);
+}
+
+export type DeleteSessionDependencies = {
+  getSessionMetadata: (sessionName: string) => Promise<SessionMetadata | null>;
+  shutdownSessionOwnedProcesses: typeof shutdownSessionOwnedProcesses;
+  removeWorktree: typeof removeWorktree;
+  cleanupSessionWorkspace: typeof cleanupSessionWorkspace;
+  getLocalDb: typeof getLocalDb;
+  getSessionPromptsDir: typeof getSessionPromptsDir;
+  publishSessionListUpdated: typeof publishSessionListUpdated;
+};
+
+const DEFAULT_DELETE_SESSION_DEPS: DeleteSessionDependencies = {
+  getSessionMetadata,
+  shutdownSessionOwnedProcesses,
+  removeWorktree,
+  cleanupSessionWorkspace,
+  getLocalDb,
+  getSessionPromptsDir,
+  publishSessionListUpdated,
+};
+
+export async function deleteSessionWithDependencies(
+  sessionName: string,
+  deps: DeleteSessionDependencies = DEFAULT_DELETE_SESSION_DEPS,
+): Promise<{ success: boolean; error?: string }> {
   try {
-    const metadata = await getSessionMetadata(sessionName);
+    const metadata = await deps.getSessionMetadata(sessionName);
     if (!metadata) {
       return { success: false, error: 'Session metadata not found' };
     }
 
     const projectKey = getSessionProjectKey(metadata.projectId, metadata.projectPath);
-    await stopAllTrackedSessionProcesses(projectKey, sessionName);
-    await terminateProvisionedStartupCommand({
-      projectId: metadata.projectId,
-      projectPath: metadata.projectPath,
+    const shutdownResult = await deps.shutdownSessionOwnedProcesses({
+      projectKey,
       sessionName,
-      startupCommandMode: 'shell',
-      startupCommandProcessPid: undefined,
     });
-    await terminateSessionTerminalSessions(sessionName);
+    if (!shutdownResult.success) {
+      return {
+        success: false,
+        error: shutdownResult.failures.join(' '),
+      };
+    }
 
     if (metadata.workspaceMode === 'single_worktree' || metadata.workspaceMode === 'multi_repo_worktree') {
       for (const gitRepo of metadata.gitRepos) {
-        await removeWorktree(gitRepo.sourceRepoPath, gitRepo.worktreePath, gitRepo.branchName);
+        await deps.removeWorktree(gitRepo.sourceRepoPath, gitRepo.worktreePath, gitRepo.branchName);
       }
     }
-    await cleanupSessionWorkspace(metadata);
+    await deps.cleanupSessionWorkspace(metadata);
 
-    const db = getLocalDb();
+    const db = deps.getLocalDb();
     db.prepare(`DELETE FROM sessions WHERE session_name = ?`).run(sessionName);
     db.prepare(`DELETE FROM session_git_repos WHERE session_name = ?`).run(sessionName);
     db.prepare(`DELETE FROM session_launch_contexts WHERE session_name = ?`).run(sessionName);
     db.prepare(`DELETE FROM session_canvas_layouts WHERE session_name = ?`).run(sessionName);
     db.prepare(`DELETE FROM session_agent_history_items WHERE session_name = ?`).run(sessionName);
 
-    const promptsDir = await getSessionPromptsDir();
+    const promptsDir = await deps.getSessionPromptsDir();
     const promptFilePath = path.join(promptsDir, `${sessionName}.txt`);
     await fs.rm(promptFilePath, { force: true });
 
     try {
-      await publishSessionListUpdated();
+      await deps.publishSessionListUpdated();
     } catch (notificationError) {
       console.warn('Failed to publish session list update after delete:', notificationError);
     }

@@ -20,6 +20,10 @@ describe('ad-hoc agent commands', () => {
 
     assert.match(command, /model_reasoning_effort="high"/);
     assert.match(command, /--model 'gpt-5\.4'/);
+    assert.match(
+      command,
+      /codex -c approval_policy="never" --sandbox danger-full-access exec --color never --skip-git-repo-check - --model 'gpt-5\.4'/,
+    );
   });
 
   it('does not add reasoning overrides for ACP providers', () => {
