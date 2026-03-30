@@ -62,6 +62,11 @@ import { normalizeMarkdownLists } from '@/lib/markdown';
 import { isPrimaryShortcutModifierPressed } from '@/lib/keyboard-shortcuts';
 import { getBaseName, getDirName } from '@/lib/path';
 import {
+  sendTerminalDataEvent,
+  sendTerminalInput,
+  submitTerminalBootstrapCommand,
+} from '@/lib/terminal-input';
+import {
   applyThemeToTerminalWindow,
   resolveShouldUseDarkTheme,
   TERMINAL_THEME_DARK,
@@ -247,21 +252,6 @@ function getTerminalRuntime(iframe: HTMLIFrameElement | null): TerminalRuntime |
   }
 }
 
-function sendTerminalInput(term: NonNullable<TerminalWindow['term']>, text: string): boolean {
-  if (typeof term.paste === 'function') {
-    term.paste(text);
-    return true;
-  }
-
-  const triggerDataEvent = term._core?.coreService?.triggerDataEvent;
-  if (typeof triggerDataEvent === 'function') {
-    triggerDataEvent(text, true);
-    return true;
-  }
-
-  return false;
-}
-
 function sendTerminalEnter(runtime: TerminalRuntime): boolean {
   try {
     const textarea = runtime.iframe.contentDocument?.querySelector('textarea.xterm-helper-textarea');
@@ -283,10 +273,10 @@ function sendTerminalEnter(runtime: TerminalRuntime): boolean {
       return true;
     }
   } catch {
-    // Fall through to the paste fallback.
+    // Fall through to the direct-input fallback.
   }
 
-  return sendTerminalInput(runtime.term, '\r');
+  return sendTerminalDataEvent(runtime.term, '\r');
 }
 
 function formatPathsForTerminalInput(paths: string[]): string {
@@ -1091,15 +1081,12 @@ const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(functi
         return;
       }
 
-      const submitted = sendTerminalInput(runtime.term, `${bootstrapCommand}\r`);
+      const submitted = submitTerminalBootstrapCommand(
+        runtime.term,
+        bootstrapCommand,
+        () => sendTerminalEnter(runtime),
+      );
       if (submitted) {
-        onBootstrapComplete();
-        return;
-      }
-
-      const pasted = sendTerminalInput(runtime.term, bootstrapCommand);
-      const entered = sendTerminalEnter(runtime);
-      if (pasted || entered) {
         onBootstrapComplete();
         return;
       }
