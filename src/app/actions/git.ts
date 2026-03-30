@@ -865,6 +865,7 @@ export async function startTtydProcess(): Promise<{
     const ttydArgs = [
       '-p', '7681',
       '-t', `theme=${JSON.stringify(TTYD_MONOCHROME_THEME)}`,
+      '-t', 'disableLeaveAlert=true',
       '-t', 'disableResizeOverlay=true',
       '-t', 'fontSize=12',
       '-t', 'fontWeight=300',

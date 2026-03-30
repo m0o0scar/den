@@ -59,7 +59,7 @@ import {
 } from '@/lib/session-canvas';
 import type { SessionCanvasWorkspaceSearchResult } from '@/lib/session-canvas-search';
 import { normalizeMarkdownLists } from '@/lib/markdown';
-import { isPrimaryShortcutModifierPressed } from '@/lib/keyboard-shortcuts';
+import { isPrimaryShortcutModifierPressed, isWindowsPlatform } from '@/lib/keyboard-shortcuts';
 import { getBaseName, getDirName } from '@/lib/path';
 import {
   applyThemeToTerminalWindow,
@@ -1191,6 +1191,26 @@ export function SessionCanvasWorkspace({
       document.body.style.overflow = previousBodyOverflow;
     };
   }, []);
+
+  useEffect(() => {
+    if (bootstrap.terminalPersistenceMode !== 'shell') {
+      return;
+    }
+
+    if (!isWindowsPlatform(getShortcutPlatform())) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [bootstrap.terminalPersistenceMode]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(SESSION_MOBILE_VIEWPORT_QUERY);
