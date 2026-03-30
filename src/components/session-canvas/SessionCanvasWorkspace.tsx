@@ -606,7 +606,6 @@ function PreviewPanel({
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [inputUrl, setInputUrl] = useState(panel.payload.url || '');
-  const [proxyUrl, setProxyUrl] = useState('');
   const [iframeEpoch, setIframeEpoch] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -619,32 +618,14 @@ function PreviewPanel({
 
     setError(null);
     setInputUrl(normalized);
-
-    try {
-      const response = await fetch('/api/preview-proxy/start', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ target: normalized }),
-      });
-
-      const payload = await response.json().catch(() => null) as { error?: string; proxyUrl?: string } | null;
-      if (!response.ok || !payload?.proxyUrl) {
-        throw new Error(payload?.error || 'Failed to load preview');
-      }
-
-      setProxyUrl(payload.proxyUrl);
-      setIframeEpoch((current) => current + 1);
-      onPanelChange({
-        title: buildPreviewPanelTitle(normalized),
-        payload: {
-          ...panel.payload,
-          url: normalized,
-        },
-      });
-    } catch (loadError) {
-      console.error('Failed to load preview panel:', loadError);
-      setError(loadError instanceof Error ? loadError.message : 'Failed to load preview');
-    }
+    setIframeEpoch((current) => current + 1);
+    onPanelChange({
+      title: buildPreviewPanelTitle(normalized),
+      payload: {
+        ...panel.payload,
+        url: normalized,
+      },
+    });
   }, [onPanelChange, panel.payload]);
 
   useEffect(() => {
@@ -652,65 +633,31 @@ function PreviewPanel({
     setInputUrl((current) => (current === normalized ? current : normalized));
 
     if (!normalized) {
-      setProxyUrl('');
       setError(null);
       setIframeEpoch(0);
     }
   }, [panel.payload.url]);
 
-  useEffect(() => {
-    const normalized = panel.payload.url?.trim();
-    if (normalized && !proxyUrl) {
-      void loadPreview(normalized);
-    }
-  }, [loadPreview, panel.payload.url, proxyUrl]);
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) return;
-
-      const payload = event.data as {
-        type?: string;
-        url?: unknown;
-      } | null;
-      if (!payload || typeof payload !== 'object') return;
-
-      if (payload.type === 'viba:preview-ready') {
-        iframeRef.current.contentWindow?.postMessage({ type: 'viba:preview-location-request' }, '*');
-        return;
-      }
-
-      if (payload.type === 'viba:preview-location-change' && typeof payload.url === 'string') {
-        const normalized = normalizePreviewUrl(payload.url);
-        if (!normalized) return;
-        setInputUrl(normalized);
-        onPanelChange({
-          title: buildPreviewPanelTitle(normalized),
-          payload: {
-            ...panel.payload,
-            url: normalized,
-          },
-        });
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => {
-      window.removeEventListener('message', handleMessage);
-    };
-  }, [onPanelChange, panel.payload]);
-
   const postNavigationMessage = useCallback((action: 'back' | 'forward') => {
     const previewWindow = iframeRef.current?.contentWindow;
     if (!previewWindow) return;
-    previewWindow.postMessage({ type: 'viba:preview-navigation', action }, '*');
+    try {
+      if (action === 'back') {
+        previewWindow.history.back();
+        return;
+      }
+
+      previewWindow.history.forward();
+    } catch (navigationError) {
+      console.error(`Failed to navigate preview ${action}:`, navigationError);
+    }
   }, []);
 
   const handleReload = useCallback(() => {
-    const nextUrl = panel.payload.url || inputUrl || '';
+    const nextUrl = panel.payload.url?.trim() || inputUrl.trim();
     if (!nextUrl) return;
-    void loadPreview(nextUrl);
-  }, [inputUrl, loadPreview, panel.payload.url]);
+    setIframeEpoch((current) => current + 1);
+  }, [inputUrl, panel.payload.url]);
 
   const handleSubmit = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -759,11 +706,11 @@ function PreviewPanel({
         <div className="flex h-full items-center justify-center px-6 text-center text-sm text-red-600 dark:text-red-300">
           {error}
         </div>
-      ) : proxyUrl ? (
+      ) : panel.payload.url ? (
         <iframe
-          key={`${proxyUrl}:${iframeEpoch}`}
+          key={`${panel.payload.url}:${iframeEpoch}`}
           ref={iframeRef}
-          src={proxyUrl}
+          src={panel.payload.url}
           className="h-full w-full border-0"
           title={panel.title}
         />
@@ -2314,7 +2261,7 @@ export function SessionCanvasWorkspace({
         <div className="relative z-0 flex h-full flex-col">
           <div className="shrink-0 px-4 pb-2 pt-4">
             <div className="flex items-center justify-between rounded-[1.75rem] border border-white/70 bg-white/80 px-3 py-2 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-950/85">
-              <div className="flex min-w-0 items-center gap-2">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
                 <button
                   type="button"
                   className={mobileToolbarButtonClass}
@@ -2324,7 +2271,7 @@ export function SessionCanvasWorkspace({
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </button>
-                <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-1.5 dark:border-slate-700 dark:bg-slate-900/90">
+                <div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-1.5 dark:border-slate-700 dark:bg-slate-900/90">
                   <div className="truncate text-[11px] font-semibold text-slate-700 dark:text-slate-100">
                     {sessionProjectLabel}
                   </div>
@@ -2333,7 +2280,7 @@ export function SessionCanvasWorkspace({
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="ml-2 flex shrink-0 items-center gap-1">
                 <button
                   type="button"
                   className={mobileToolbarButtonClass}
@@ -2451,7 +2398,7 @@ export function SessionCanvasWorkspace({
 
           <div className="relative z-0 h-full w-full">
             <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center p-4">
-              <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 rounded-xl border border-white/70 bg-white/80 px-2.5 py-1.5 text-[11px] shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-950/85">
+              <div className="pointer-events-auto flex max-w-[calc(100%-2rem)] flex-wrap items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-white/80 px-2.5 py-1.5 text-[11px] shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-950/85">
                 <button
                   type="button"
                   className={toolbarIconButtonClass}
@@ -2461,13 +2408,13 @@ export function SessionCanvasWorkspace({
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
                 </button>
-                <div className="flex min-w-0 max-w-[240px] items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-slate-700 dark:bg-slate-900">
+                <div className="flex max-w-[240px] shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-slate-700 dark:bg-slate-900">
                   <div className="min-w-0">
                     <div className="truncate text-[11px] font-semibold text-slate-700 dark:text-slate-100">
                       {sessionProjectLabel}
                     </div>
                   </div>
-                  <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+                  <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
                     {sessionWorkspaceLabel}
                   </span>
                 </div>
