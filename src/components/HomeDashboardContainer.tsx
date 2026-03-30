@@ -9,6 +9,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { getConfig, updateConfig, updateProjectSettings, type Config } from '@/app/actions/config';
 import { listCredentials } from '@/app/actions/credentials';
