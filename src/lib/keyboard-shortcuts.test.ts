@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  isWindowsPlatform,
   isPrimaryShortcutModifierPressed,
   platformUsesMetaShortcuts,
 } from './keyboard-shortcuts.ts';
@@ -40,5 +41,18 @@ describe('isPrimaryShortcutModifierPressed', () => {
       isPrimaryShortcutModifierPressed({ metaKey: true, ctrlKey: false }, 'Win32'),
       false,
     );
+  });
+});
+
+describe('isWindowsPlatform', () => {
+  it('detects Windows browser platforms', () => {
+    assert.equal(isWindowsPlatform('Win32'), true);
+    assert.equal(isWindowsPlatform('Windows'), true);
+  });
+
+  it('does not treat macOS or Linux as Windows', () => {
+    assert.equal(isWindowsPlatform('MacIntel'), false);
+    assert.equal(isWindowsPlatform('Linux x86_64'), false);
+    assert.equal(isWindowsPlatform(undefined), false);
   });
 });
