@@ -6,6 +6,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
@@ -233,6 +234,21 @@ function CanvasPanelFrameComponent({
     finalizePointerTracking();
   }, [finalizePointerTracking, handlePointerMove, handlePointerUp]);
 
+  const handleHeaderDoubleClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (isInteractiveTarget(event.target)) return;
+
+    event.stopPropagation();
+    onFocus(panel.id);
+
+    if (isStacked) return;
+    if (isMaximized) {
+      onRestore(panel.id);
+      return;
+    }
+
+    onMaximize(panel.id);
+  }, [isMaximized, isStacked, onFocus, onMaximize, onRestore, panel.id]);
+
   const startPointerTracking = useCallback((
     event: ReactPointerEvent,
     mode: 'move' | 'resize',
@@ -347,6 +363,7 @@ function CanvasPanelFrameComponent({
           if (isInteractiveTarget(event.target)) return;
           startPointerTracking(event, 'move');
         }}
+        onDoubleClick={handleHeaderDoubleClick}
       >
         <div className="flex shrink-0 items-center gap-1.5" data-panel-interactive="true">
           <button
