@@ -38,7 +38,7 @@ export function useProjects() {
   return useQuery<Project[]>({
     queryKey: ['projects'],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/projects`);
+      const res = await fetch(`${API_BASE}/projects`, { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to fetch projects');
       return res.json();
     },

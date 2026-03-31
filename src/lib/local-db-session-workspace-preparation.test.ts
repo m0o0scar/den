@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -87,5 +87,49 @@ describe('local state persistence', () => {
     assert.equal(reloadedState.sessionWorkspacePreparations['prep-1']?.status, 'ready');
     assert.equal(rawFile.sessionCanvasLayouts['session-1']?.layoutJson, '{"version":1}');
     assert.equal(rawFile.sessionWorkspacePreparations['prep-1']?.status, 'ready');
+  });
+
+  it('reloads external writes before applying updates', async () => {
+    void localDbModule.readLocalState();
+
+    await writeFile(localDbModule.getLocalDbPath(), JSON.stringify({
+      version: 1,
+      projects: {
+        'project-1': {
+          id: 'project-1',
+          name: 'Project 1',
+          folderPaths: ['/tmp/project-1'],
+        },
+      },
+      repositories: {},
+      appSettings: {},
+      appConfig: {
+        recentProjects: [],
+        homeProjectSort: 'last-update',
+        defaultRoot: '',
+        selectedIde: 'vscode',
+        agentWidth: 66.666,
+        pinnedFolderShortcuts: [],
+        projectSettings: {},
+      },
+      gitRepoCredentials: {},
+      credentialsMetadata: [],
+      agentApiCredentialsMetadata: [],
+      sessions: {},
+      sessionLaunchContexts: {},
+      sessionCanvasLayouts: {},
+      sessionWorkspacePreparations: {},
+      drafts: {},
+      quickCreateDrafts: {},
+      sessionAgentHistoryItems: {},
+    }, null, 2), 'utf8');
+
+    localDbModule.updateLocalState((state) => {
+      state.appConfig.recentProjects = ['project-1'];
+    });
+
+    const reloadedState = localDbModule.readLocalState();
+    assert.equal(reloadedState.projects['project-1']?.name, 'Project 1');
+    assert.deepEqual(reloadedState.appConfig.recentProjects, ['project-1']);
   });
 });

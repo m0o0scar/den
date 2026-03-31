@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { findProjectByFolderPath, getDefaultRootFolder, getProjectById, getProjects, addProject, removeProject, updateProject } from '@/lib/store';
 import { normalizeProjectFolderPath, normalizeProjectFolderPaths, validateProjectFolderAssociations } from '@/lib/project-folders';
 
+export const dynamic = 'force-dynamic';
+
 const createDefaultFolderSchema = z.object({
   enabled: z.boolean(),
   folderName: z.string().optional(),

@@ -574,15 +574,13 @@ function loadStateFromDisk(): LocalState {
   }
 }
 
-function getStateReference(): LocalState {
-  if (!stateCache) {
-    stateCache = loadStateFromDisk();
-  }
-  return stateCache;
-}
-
 export function readLocalState(): LocalState {
-  return cloneState(getStateReference());
+  // Route handlers and server actions can run in different Next.js workers.
+  // Reload from disk on every access so one worker does not serve stale state
+  // or overwrite another worker's newer write with its in-memory cache.
+  const latestState = loadStateFromDisk();
+  stateCache = latestState;
+  return cloneState(latestState);
 }
 
 export function writeLocalState(nextState: LocalState): void {
@@ -592,7 +590,7 @@ export function writeLocalState(nextState: LocalState): void {
 }
 
 export function updateLocalState<T>(updater: (state: LocalState) => T): T {
-  const draft = cloneState(getStateReference());
+  const draft = readLocalState();
   const result = updater(draft);
   writeLocalState(draft);
   return result;
