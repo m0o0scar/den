@@ -73,7 +73,6 @@ import {
 } from '@/lib/terminal-input';
 import {
   applyThemeToTerminalWindow,
-  resolveShouldUseDarkTheme,
   TERMINAL_THEME_DARK,
   TERMINAL_THEME_LIGHT,
 } from '@/lib/ttyd-theme';
@@ -488,6 +487,46 @@ function getShortcutPlatform(): string {
   };
 
   return navigatorWithUserAgentData.userAgentData?.platform || navigator.platform || '';
+}
+
+function readDocumentDarkMode(): boolean {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  return document.documentElement.classList.contains('dark');
+}
+
+function useDocumentDarkMode(): boolean {
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => readDocumentDarkMode());
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
+      return;
+    }
+
+    const root = document.documentElement;
+    const syncDarkMode = () => {
+      setIsDarkMode(root.classList.contains('dark'));
+    };
+
+    syncDarkMode();
+
+    const observer = new MutationObserver(() => {
+      syncDarkMode();
+    });
+
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  return isDarkMode;
 }
 
 const MarkdownFileContent = memo(function MarkdownFileContent({ content }: { content: string }) {
@@ -971,7 +1010,7 @@ const TerminalPanel = forwardRef<SessionCanvasAgentInputHandle, TerminalPanelPro
   onBootstrapComplete,
   onOpenPreview,
 }, ref) {
-  const { resolvedTheme } = useTheme();
+  const isDocumentDarkMode = useDocumentDarkMode();
   const { attachTerminalLinkHandler } = useTerminalLink({ onLoadPreview: onOpenPreview });
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const bootstrapStartedRef = useRef(false);
@@ -986,15 +1025,8 @@ const TerminalPanel = forwardRef<SessionCanvasAgentInputHandle, TerminalPanelPro
     !shouldBootstrap || terminalPersistenceMode !== 'tmux',
   );
   const terminalTheme = useMemo(() => {
-    const shouldUseDark = resolveShouldUseDarkTheme(
-      resolvedTheme === 'light' || resolvedTheme === 'dark' ? resolvedTheme : 'auto',
-      typeof window !== 'undefined'
-        && typeof window.matchMedia === 'function'
-        && window.matchMedia('(prefers-color-scheme: dark)').matches,
-    );
-
-    return shouldUseDark ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT;
-  }, [resolvedTheme]);
+    return isDocumentDarkMode ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT;
+  }, [isDocumentDarkMode]);
 
   const applyTerminalTheme = useCallback(function applyTerminalTheme(attempts = 0) {
     const applied = applyThemeToTerminalWindow(
