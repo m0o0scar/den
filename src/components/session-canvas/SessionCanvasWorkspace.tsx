@@ -1275,7 +1275,6 @@ export function SessionCanvasWorkspace({
   const commandPaletteRequestIdRef = useRef(0);
   const didHydrateLayoutRef = useRef(false);
   const didFitInitialLayoutRef = useRef(false);
-  const autoStartedAgentTurnKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     const previousBodyOverflow = document.body.style.overflow;
@@ -1459,75 +1458,9 @@ export function SessionCanvasWorkspace({
     setCommandPaletteHighlightedIndex(0);
     commandPaletteRequestIdRef.current = 0;
     agentInputHandlesRef.current = {};
-    autoStartedAgentTurnKeyRef.current = null;
     didHydrateLayoutRef.current = false;
     didFitInitialLayoutRef.current = false;
   }, [bootstrap.layout, sessionId]);
-
-  useEffect(() => {
-    if (!shouldAutoStartSessionCanvasAgentTurn({
-      initialized: bootstrap.metadata.initialized,
-      initialPrompt: bootstrap.initialAgentPrompt,
-      runState: bootstrap.metadata.runState ?? null,
-    })) {
-      return;
-    }
-
-    const initialPrompt = bootstrap.initialAgentPrompt?.trim();
-    if (!initialPrompt) {
-      return;
-    }
-
-    const requestKey = `${sessionId}:${initialPrompt}`;
-    if (autoStartedAgentTurnKeyRef.current === requestKey) {
-      return;
-    }
-    autoStartedAgentTurnKeyRef.current = requestKey;
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch('/api/agent/message', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            sessionId,
-            message: initialPrompt,
-            displayMessage: initialPrompt,
-            markInitialized: true,
-          }),
-        });
-        const payload = await response.json().catch(() => null) as { error?: string } | null;
-        if (!response.ok) {
-          throw new Error(payload?.error || 'Failed to start the initial agent turn.');
-        }
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        autoStartedAgentTurnKeyRef.current = null;
-        console.error('Failed to auto-start session agent turn:', error);
-        void confirmDialog({
-          title: 'Failed to start the agent',
-          description: error instanceof Error ? error.message : 'Failed to start the initial agent turn.',
-          confirmLabel: 'OK',
-          cancelLabel: 'Close',
-        });
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    bootstrap.initialAgentPrompt,
-    bootstrap.metadata.initialized,
-    bootstrap.metadata.runState,
-    confirmDialog,
-    sessionId,
-  ]);
 
   useEffect(() => {
     if (bootstrap.restoredFromSavedLayout || didFitInitialLayoutRef.current) {
@@ -2308,6 +2241,12 @@ export function SessionCanvasWorkspace({
           ref={(handle) => registerAgentInputHandle(panel.id, handle)}
           sessionId={sessionId}
           workspacePath={bootstrap.workspaceRootPath}
+          initialSnapshot={bootstrap.initialAgentSnapshot}
+          autoStartMessage={shouldAutoStartSessionCanvasAgentTurn({
+            initialized: bootstrap.metadata.initialized,
+            initialPrompt: bootstrap.initialAgentPrompt,
+            runState: bootstrap.metadata.runState ?? null,
+          }) ? bootstrap.initialAgentPrompt : null}
           onRequestAddFiles={() => handleOpenAgentFileBrowser(panel.id)}
           isAddingFiles={isAgentFileInsertPending && agentFileTargetPanelId === panel.id}
           isMobileViewport={isMobileViewport}

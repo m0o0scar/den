@@ -87,6 +87,8 @@ export type AgentSessionHeaderMeta = {
 type AgentSessionPaneProps = {
   sessionId: string;
   workspacePath: string;
+  initialSnapshot?: SessionSnapshotResponse | null;
+  autoStartMessage?: string | null;
   onFeedback?: (message: string) => void;
   onHeaderMetaChange?: (meta: AgentSessionHeaderMeta) => void;
   onRequestAddFiles?: () => void;
@@ -109,6 +111,7 @@ type VirtualHistoryMetrics = {
 
 const HISTORY_ITEM_GAP_PX = 12;
 const HISTORY_ITEM_OVERSCAN_PX = 600;
+const VIRTUALIZED_HISTORY_MIN_COUNT = 80;
 const COMPOSER_MAX_HEIGHT = 112;
 const STREAMING_HISTORY_TAIL_COUNT = 4;
 const ACTIVE_TURN_REFRESH_INTERVAL_MS = 15_000;
@@ -794,6 +797,8 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
   {
     sessionId,
     workspacePath,
+    initialSnapshot = null,
+    autoStartMessage = null,
     onFeedback,
     onHeaderMetaChange,
     onRequestAddFiles,
@@ -802,9 +807,9 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
   },
   ref,
 ) {
-  const [runtime, setRuntime] = useState<SessionAgentRuntimeState | null>(null);
-  const [history, setHistory] = useState<SessionAgentHistoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [runtime, setRuntime] = useState<SessionAgentRuntimeState | null>(initialSnapshot?.runtime ?? null);
+  const [history, setHistory] = useState<SessionAgentHistoryItem[]>(initialSnapshot?.history ?? []);
+  const [loading, setLoading] = useState(() => !initialSnapshot && !(autoStartMessage?.trim()));
   const [error, setError] = useState<string | null>(null);
   const [composerValue, setComposerValue] = useState('');
   const [pendingAttachmentPaths, setPendingAttachmentPaths] = useState<string[]>([]);
@@ -838,6 +843,7 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
   const latestComposerValueRef = useRef(composerValue);
   const latestCursorPositionRef = useRef(cursorPosition);
   const latestAgentProviderRef = useRef<AgentProvider | null>(null);
+  const autoStartRequestKeyRef = useRef<string | null>(null);
 
   const scheduleRefresh = useCallback((delay = 120) => {
     if (refreshTimerRef.current !== null) {
@@ -868,8 +874,10 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
     }, delay);
   }, [sessionId]);
 
-  const loadSnapshot = useCallback(async () => {
-    setLoading(true);
+  const loadSnapshot = useCallback(async (options?: { showLoading?: boolean }) => {
+    if (options?.showLoading ?? true) {
+      setLoading(true);
+    }
     try {
       const response = await fetch(`/api/agent/session?sessionId=${encodeURIComponent(sessionId)}`, {
         cache: 'no-store',
@@ -892,8 +900,18 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
   }, [sessionId]);
 
   useEffect(() => {
-    void loadSnapshot();
-  }, [loadSnapshot]);
+    setRuntime(initialSnapshot?.runtime ?? null);
+    setHistory(initialSnapshot?.history ?? []);
+    setLoading(!initialSnapshot && !(autoStartMessage?.trim()));
+    setError(null);
+    setPendingMessages([]);
+    setOptimisticMessages([]);
+    autoStartRequestKeyRef.current = null;
+  }, [autoStartMessage, initialSnapshot, sessionId]);
+
+  useEffect(() => {
+    void loadSnapshot({ showLoading: !initialSnapshot && !(autoStartMessage?.trim()) });
+  }, [autoStartMessage, initialSnapshot, loadSnapshot]);
 
   useEffect(() => {
     const nextSelection = pendingSelectionRef.current;
@@ -1166,6 +1184,7 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
     () => displayHistory.slice(Math.max(0, displayHistory.length - liveHistoryTailCount)),
     [displayHistory, liveHistoryTailCount],
   );
+  const shouldVirtualizeHistory = virtualizedHistory.length >= VIRTUALIZED_HISTORY_MIN_COUNT;
   const historyMetrics = useMemo(() => {
     void historySizeVersion;
     const metrics: VirtualHistoryMetrics[] = [];
@@ -1319,7 +1338,11 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
   const turnDiagnostics = runtime?.turnDiagnostics ?? null;
   const [isAgentDetailsDialogOpen, setIsAgentDetailsDialogOpen] = useState(false);
 
-  const submitMessageToAgent = useCallback(async (message: string, attachmentPaths: string[] = []) => {
+  const submitMessageToAgent = useCallback(async (
+    message: string,
+    attachmentPaths: string[] = [],
+    options?: { markInitialized?: boolean },
+  ) => {
     const normalizedAttachmentPaths = Array.from(new Set(attachmentPaths.map((entry) => entry.trim()).filter(Boolean)));
     const displayMessage = buildDisplayMessage(message, normalizedAttachmentPaths);
     setError(null);
@@ -1334,6 +1357,7 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
           message,
           displayMessage,
           attachmentPaths: normalizedAttachmentPaths,
+          ...(options?.markInitialized ? { markInitialized: true } : {}),
         }),
       });
       const payload = await response.json().catch(() => null) as { error?: string } | null;
@@ -1350,6 +1374,47 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
       return { success: false as const, error: messageText };
     }
   }, [onFeedback, scheduleRefresh, sessionId]);
+
+  useEffect(() => {
+    const normalizedAutoStartMessage = autoStartMessage?.trim();
+    if (!normalizedAutoStartMessage) {
+      return;
+    }
+
+    const requestKey = `${sessionId}:${normalizedAutoStartMessage}`;
+    if (autoStartRequestKeyRef.current === requestKey) {
+      return;
+    }
+
+    if (history.some((item) => item.kind === 'user' && item.text === normalizedAutoStartMessage)) {
+      autoStartRequestKeyRef.current = requestKey;
+      return;
+    }
+
+    autoStartRequestKeyRef.current = requestKey;
+    const optimisticMessage = createOptimisticUserMessage(normalizedAutoStartMessage);
+    setOptimisticMessages((current) => [...current, optimisticMessage]);
+    shouldStickToBottomRef.current = true;
+    setIsSending(true);
+
+    let cancelled = false;
+    void (async () => {
+      const result = await submitMessageToAgent(normalizedAutoStartMessage, [], { markInitialized: true });
+      if (cancelled) {
+        return;
+      }
+
+      if (!result.success) {
+        setOptimisticMessages((current) => current.filter((item) => item.id !== optimisticMessage.id));
+        autoStartRequestKeyRef.current = null;
+      }
+      setIsSending(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [autoStartMessage, history, sessionId, submitMessageToAgent]);
 
   const hideSuggestions = useCallback(() => {
     setShowSuggestions(false);
@@ -1812,6 +1877,19 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
               <div className="max-w-md rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-6 text-center text-sm text-slate-500 dark:border-[#30363d] dark:bg-[#0d1117]/50 dark:text-slate-400">
                 No agent activity yet. Send a task below to start a background turn.
               </div>
+            </div>
+          ) : !shouldVirtualizeHistory ? (
+            <div className="space-y-3">
+              {displayHistory.map((item) => (
+                <div key={item.id}>
+                  {renderHistoryItem(item, {
+                    ...(item.itemStatus === 'sending' ? { status: 'sending', pulse: true } : {}),
+                    expandedItems: expandedHistoryItems,
+                    onToggleExpanded: handleToggleExpanded,
+                    planFallbackStepsById,
+                  })}
+                </div>
+              ))}
             </div>
           ) : (
             <>

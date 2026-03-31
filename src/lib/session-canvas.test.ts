@@ -44,6 +44,8 @@ describe('session canvas layout helpers', () => {
       layout.panels.map((panel) => panel.type),
       ['agent-terminal', 'terminal'],
     );
+    assert.equal(layout.panels[0]?.width, 800);
+    assert.equal(layout.panels[0]?.height, 1000);
     assert.equal(layout.panels[0]?.y, layout.panels[1]?.y);
     assert.equal(layout.panels[1]!.x > layout.panels[0]!.x + layout.panels[0]!.width, true);
     assert.equal(layout.panels[1]?.height, 420);

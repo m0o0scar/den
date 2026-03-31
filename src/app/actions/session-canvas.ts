@@ -12,9 +12,11 @@ import {
 } from './git';
 import { discoverProjectGitRepos } from './project';
 import {
+  getSessionAgentSnapshot,
   getSessionMetadata,
   readSessionLaunchContext,
   terminateSessionStartupScript,
+  type SessionAgentSnapshot,
   type SessionLaunchContext,
   type SessionMetadata,
 } from './session';
@@ -89,6 +91,7 @@ export type SessionCanvasBootstrapResult =
       workspaceRootPath: string;
       restoredFromSavedLayout: boolean;
       savedLayoutVersion: number | null;
+      initialAgentSnapshot: SessionAgentSnapshot | null;
       initialCommands: {
         startupCommand: string | null;
       };
@@ -330,9 +333,10 @@ export async function getSessionCanvasBootstrap(sessionId: string): Promise<Sess
       return { success: false, error: 'Session not found' };
     }
 
-    const [resolvedProject, launchContextResult] = await Promise.all([
+    const [resolvedProject, launchContextResult, initialAgentSnapshotResult] = await Promise.all([
       Promise.resolve(metadata.projectId ? getProjectById(metadata.projectId) : null),
       readSessionLaunchContext(sessionId),
+      getSessionAgentSnapshot(sessionId),
     ]);
 
     if (!launchContextResult.success) {
@@ -425,6 +429,9 @@ export async function getSessionCanvasBootstrap(sessionId: string): Promise<Sess
       workspaceRootPath: metadata.workspacePath,
       restoredFromSavedLayout: Boolean(savedLayout),
       savedLayoutVersion,
+      initialAgentSnapshot: initialAgentSnapshotResult.success
+        ? (initialAgentSnapshotResult.snapshot ?? null)
+        : null,
       initialCommands: {
         startupCommand: buildShellBootstrapCommand(
           metadata.workspacePath,
