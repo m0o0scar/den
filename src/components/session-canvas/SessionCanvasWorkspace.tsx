@@ -304,9 +304,11 @@ function sendTerminalEnter(runtime: TerminalRuntime): boolean {
 
 function attachTerminalTouchScrollBridge(runtime: TerminalRuntime): () => void {
   const doc = runtime.iframe.contentDocument;
-  if (!doc || typeof runtime.term.scrollLines !== 'function') {
+  const term = runtime.term;
+  if (!doc || typeof term.scrollLines !== 'function') {
     return () => {};
   }
+  const scrollLines = term.scrollLines.bind(term);
 
   let activeTouchId: number | null = null;
   let lastClientY: number | null = null;
@@ -314,7 +316,7 @@ function attachTerminalTouchScrollBridge(runtime: TerminalRuntime): () => void {
 
   const resolveLineHeight = () => {
     const viewport = doc.querySelector('.xterm-viewport');
-    const rows = typeof runtime.term.rows === 'number' ? runtime.term.rows : 0;
+    const rows = typeof term.rows === 'number' ? term.rows : 0;
     if (viewport instanceof HTMLElement && rows > 0 && viewport.clientHeight > 0) {
       return Math.max(8, viewport.clientHeight / rows);
     }
@@ -373,7 +375,7 @@ function attachTerminalTouchScrollBridge(runtime: TerminalRuntime): () => void {
       : Math.ceil(pixelCarry / lineHeight);
 
     if (wholeLines !== 0) {
-      runtime.term.scrollLines(-wholeLines);
+      scrollLines(-wholeLines);
       pixelCarry -= wholeLines * lineHeight;
     }
 
