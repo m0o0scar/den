@@ -134,7 +134,7 @@ type NewSessionPageProps = {
   }>;
 };
 
-export function resolveProjectParamToReference(projectReference?: string | null): string | null {
+function resolveProjectParamToReference(projectReference?: string | null): string | null {
   return resolveNewSessionProjectReference(projectReference);
 }
 

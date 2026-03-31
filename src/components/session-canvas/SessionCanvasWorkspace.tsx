@@ -52,10 +52,16 @@ import {
   fitSessionCanvasLayoutToViewport,
   fitSessionCanvasViewportToPanels,
   getSessionCanvasTerminalRole,
-  SESSION_CANVAS_AGENT_BOOTSTRAP_VERSION,
   SESSION_CANVAS_STARTUP_BOOTSTRAP_VERSION,
   SESSION_CANVAS_DEFAULT_EXPLORER_WIDTH,
+  shouldBootstrapSessionCanvasTerminalPanel,
 } from '@/lib/session-canvas';
+import AgentSessionPane from '@/components/AgentSessionPane';
+import {
+  insertPathsIntoAgentInput,
+  shouldAutoStartSessionCanvasAgentTurn,
+  type SessionCanvasAgentInputHandle,
+} from '@/lib/session-canvas-agent';
 import type { SessionCanvasWorkspaceSearchResult } from '@/lib/session-canvas-search';
 import { normalizeMarkdownLists } from '@/lib/markdown';
 import { isPrimaryShortcutModifierPressed, isWindowsPlatform } from '@/lib/keyboard-shortcuts';
@@ -67,7 +73,8 @@ import {
 } from '@/lib/terminal-input';
 import {
   applyThemeToTerminalWindow,
-  resolveTerminalThemeFromBrowser,
+  TERMINAL_THEME_DARK,
+  TERMINAL_THEME_LIGHT,
 } from '@/lib/ttyd-theme';
 import { uploadAttachments } from '@/lib/upload-attachments';
 import { normalizePreviewUrl } from '@/lib/url';
@@ -125,10 +132,6 @@ type FileViewerState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
   | { status: 'ready'; content: string; mode: 'markdown' | 'text'; sizeBytes: number };
-
-type TerminalPanelHandle = {
-  insertText: (text: string) => boolean;
-};
 
 type PanelRestoreBounds = NonNullable<NonNullable<SessionCanvasPanel['state']>['restoreBounds']>;
 
@@ -304,9 +307,11 @@ function sendTerminalEnter(runtime: TerminalRuntime): boolean {
 
 function attachTerminalTouchScrollBridge(runtime: TerminalRuntime): () => void {
   const doc = runtime.iframe.contentDocument;
-  if (!doc || typeof runtime.term.scrollLines !== 'function') {
+  const term = runtime.term;
+  if (!doc || typeof term.scrollLines !== 'function') {
     return () => {};
   }
+  const scrollLines = term.scrollLines.bind(term);
 
   let activeTouchId: number | null = null;
   let lastClientY: number | null = null;
@@ -314,7 +319,7 @@ function attachTerminalTouchScrollBridge(runtime: TerminalRuntime): () => void {
 
   const resolveLineHeight = () => {
     const viewport = doc.querySelector('.xterm-viewport');
-    const rows = typeof runtime.term.rows === 'number' ? runtime.term.rows : 0;
+    const rows = typeof term.rows === 'number' ? term.rows : 0;
     if (viewport instanceof HTMLElement && rows > 0 && viewport.clientHeight > 0) {
       return Math.max(8, viewport.clientHeight / rows);
     }
@@ -373,7 +378,7 @@ function attachTerminalTouchScrollBridge(runtime: TerminalRuntime): () => void {
       : Math.ceil(pixelCarry / lineHeight);
 
     if (wholeLines !== 0) {
-      runtime.term.scrollLines(-wholeLines);
+      scrollLines(-wholeLines);
       pixelCarry -= wholeLines * lineHeight;
     }
 
@@ -399,12 +404,6 @@ function attachTerminalTouchScrollBridge(runtime: TerminalRuntime): () => void {
     doc.removeEventListener('touchend', handleTouchEnd);
     doc.removeEventListener('touchcancel', handleTouchEnd);
   };
-}
-
-function formatPathsForTerminalInput(paths: string[]): string {
-  const normalizedPaths = Array.from(new Set(paths.map((path) => path.trim()).filter(Boolean)));
-  if (normalizedPaths.length === 0) return '';
-  return `${normalizedPaths.join(' ')} `;
 }
 
 function resolveBrowserInitialPath(args: {
@@ -488,6 +487,46 @@ function getShortcutPlatform(): string {
   };
 
   return navigatorWithUserAgentData.userAgentData?.platform || navigator.platform || '';
+}
+
+function readDocumentDarkMode(): boolean {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  return document.documentElement.classList.contains('dark');
+}
+
+function useDocumentDarkMode(): boolean {
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => readDocumentDarkMode());
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
+      return;
+    }
+
+    const root = document.documentElement;
+    const syncDarkMode = () => {
+      setIsDarkMode(root.classList.contains('dark'));
+    };
+
+    syncDarkMode();
+
+    const observer = new MutationObserver(() => {
+      syncDarkMode();
+    });
+
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  return isDarkMode;
 }
 
 const MarkdownFileContent = memo(function MarkdownFileContent({ content }: { content: string }) {
@@ -959,7 +998,7 @@ function CommandPalette({
   );
 }
 
-const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(function TerminalPanel({
+const TerminalPanel = forwardRef<SessionCanvasAgentInputHandle, TerminalPanelProps>(function TerminalPanel({
   sessionId,
   panel,
   src,
@@ -971,6 +1010,7 @@ const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(functi
   onBootstrapComplete,
   onOpenPreview,
 }, ref) {
+  const isDocumentDarkMode = useDocumentDarkMode();
   const { attachTerminalLinkHandler } = useTerminalLink({ onLoadPreview: onOpenPreview });
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const bootstrapStartedRef = useRef(false);
@@ -984,11 +1024,14 @@ const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(functi
   const [terminalReady, setTerminalReady] = useState(
     !shouldBootstrap || terminalPersistenceMode !== 'tmux',
   );
+  const terminalTheme = useMemo(() => {
+    return isDocumentDarkMode ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT;
+  }, [isDocumentDarkMode]);
 
   const applyTerminalTheme = useCallback(function applyTerminalTheme(attempts = 0) {
     const applied = applyThemeToTerminalWindow(
       iframeRef.current?.contentWindow,
-      resolveTerminalThemeFromBrowser(),
+      terminalTheme,
     );
 
     if (applied || attempts >= 40) {
@@ -999,7 +1042,7 @@ const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(functi
     themeApplyTimerRef.current = window.setTimeout(() => {
       applyTerminalTheme(attempts + 1);
     }, 200);
-  }, []);
+  }, [terminalTheme]);
 
   const attachTerminalLinks = useCallback(function attachTerminalLinks(attempts = 0) {
     const iframe = iframeRef.current;
@@ -1117,7 +1160,7 @@ const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(functi
       return;
     }
     applyTerminalTheme();
-  }, [applyTerminalTheme, iframeEpoch, terminalReady]);
+  }, [applyTerminalTheme, iframeEpoch, terminalReady, terminalTheme]);
 
   useEffect(() => {
     if (!terminalServiceReady) {
@@ -1256,7 +1299,7 @@ export function SessionCanvasWorkspace({
     startX: number;
     startY: number;
   } | null>(null);
-  const agentTerminalHandlesRef = useRef<Record<string, TerminalPanelHandle | null>>({});
+  const agentInputHandlesRef = useRef<Record<string, SessionCanvasAgentInputHandle | null>>({});
   const [layout, setLayout] = useState<SessionCanvasLayout>(bootstrap.layout);
   const [activePanelId, setActivePanelId] = useState<string | null>(bootstrap.layout.panels.at(-1)?.id || null);
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>(bootstrap.layout.panels.at(-1)?.id || null);
@@ -1459,7 +1502,7 @@ export function SessionCanvasWorkspace({
     setCommandPaletteError(null);
     setCommandPaletteHighlightedIndex(0);
     commandPaletteRequestIdRef.current = 0;
-    agentTerminalHandlesRef.current = {};
+    agentInputHandlesRef.current = {};
     didHydrateLayoutRef.current = false;
     didFitInitialLayoutRef.current = false;
   }, [bootstrap.layout, sessionId]);
@@ -1534,9 +1577,9 @@ export function SessionCanvasWorkspace({
   useEffect(() => {
     const activePanelIds = new Set(layout.panels.map((panel) => panel.id));
     let shouldCloseAgentFileBrowser = false;
-    for (const panelId of Object.keys(agentTerminalHandlesRef.current)) {
+    for (const panelId of Object.keys(agentInputHandlesRef.current)) {
       if (!activePanelIds.has(panelId)) {
-        delete agentTerminalHandlesRef.current[panelId];
+        delete agentInputHandlesRef.current[panelId];
       }
     }
 
@@ -1762,23 +1805,17 @@ export function SessionCanvasWorkspace({
     };
   }, [layout.panelDefaults?.preview?.height, layout.panelDefaults?.preview?.width, layout.panels]);
 
-  const markBootstrapComplete = useCallback((key: 'agentStarted' | 'startupStarted') => {
+  const markStartupBootstrapComplete = useCallback(() => {
     setLayout((previous) => (
-      previous.bootstrap[key]
-        && (
-          key === 'agentStarted'
-            ? previous.bootstrap.agentLaunchVersion === SESSION_CANVAS_AGENT_BOOTSTRAP_VERSION
-            : previous.bootstrap.startupLaunchVersion === SESSION_CANVAS_STARTUP_BOOTSTRAP_VERSION
-        )
+      previous.bootstrap.startupStarted
+        && previous.bootstrap.startupLaunchVersion === SESSION_CANVAS_STARTUP_BOOTSTRAP_VERSION
         ? previous
         : {
             ...previous,
             bootstrap: {
               ...previous.bootstrap,
-              [key]: true,
-              ...(key === 'agentStarted'
-                ? { agentLaunchVersion: SESSION_CANVAS_AGENT_BOOTSTRAP_VERSION }
-                : { startupLaunchVersion: SESSION_CANVAS_STARTUP_BOOTSTRAP_VERSION }),
+              startupStarted: true,
+              startupLaunchVersion: SESSION_CANVAS_STARTUP_BOOTSTRAP_VERSION,
             },
           }
     ));
@@ -1912,26 +1949,25 @@ export function SessionCanvasWorkspace({
     isCommandPaletteOpen,
   ]);
 
-  const registerAgentTerminalHandle = useCallback((panelId: string, handle: TerminalPanelHandle | null) => {
+  const registerAgentInputHandle = useCallback((panelId: string, handle: SessionCanvasAgentInputHandle | null) => {
     if (handle) {
-      agentTerminalHandlesRef.current[panelId] = handle;
+      agentInputHandlesRef.current[panelId] = handle;
       return;
     }
-    delete agentTerminalHandlesRef.current[panelId];
+    delete agentInputHandlesRef.current[panelId];
   }, []);
 
   const insertPathsIntoAgentPanel = useCallback(async (targetPanelId: string | null, paths: string[]) => {
-    const nextText = formatPathsForTerminalInput(paths);
-    if (!targetPanelId || !nextText) {
+    if (!targetPanelId) {
       setIsAgentFileBrowserOpen(false);
       return false;
     }
 
-    const inserted = agentTerminalHandlesRef.current[targetPanelId]?.insertText(nextText) ?? false;
+    const inserted = insertPathsIntoAgentInput(agentInputHandlesRef.current[targetPanelId], paths);
     if (!inserted) {
       await confirmDialog({
-        title: 'Agent terminal not ready',
-        description: 'Wait for the agent terminal to finish loading, then try Add Files again.',
+        title: 'Agent panel not ready',
+        description: 'Wait for the agent panel to finish loading, then try Add Files again.',
         confirmLabel: 'OK',
         cancelLabel: 'Close',
       });
@@ -2245,38 +2281,20 @@ export function SessionCanvasWorkspace({
 
   const renderPanel = useCallback((panel: SessionCanvasPanel) => {
     if (panel.type === 'agent-terminal') {
-      const src = buildSessionCanvasTerminalSrc({
-        sessionName: sessionId,
-        panel,
-        terminalEnvironments: bootstrap.terminalEnvironments,
-        persistenceMode: bootstrap.terminalPersistenceMode,
-        shellKind: bootstrap.terminalShellKind,
-        workspaceRootPath: bootstrap.workspaceRootPath,
-      });
-      const bootstrapCommand = buildSessionCanvasTerminalBootstrapCommand({
-        src,
-        persistenceMode: bootstrap.terminalPersistenceMode,
-        shellKind: bootstrap.terminalShellKind,
-        panelBootstrapCommand: bootstrap.initialCommands.agentCommand,
-      });
-
       return (
-        <TerminalPanel
-          ref={(handle) => registerAgentTerminalHandle(panel.id, handle)}
+        <AgentSessionPane
+          ref={(handle) => registerAgentInputHandle(panel.id, handle)}
           sessionId={sessionId}
-          panel={panel}
-          src={src}
-          terminalPersistenceMode={bootstrap.terminalPersistenceMode}
-          terminalServiceReady={terminalServiceReady}
-          terminalError={terminalServiceError}
-          bootstrapCommand={bootstrapCommand}
-          shouldBootstrap={
-            bootstrap.terminalPersistenceMode === 'shell'
-              ? Boolean(bootstrapCommand)
-              : layout.bootstrap.agentLaunchVersion !== SESSION_CANVAS_AGENT_BOOTSTRAP_VERSION
-          }
-          onBootstrapComplete={() => markBootstrapComplete('agentStarted')}
-          onOpenPreview={handleOpenPreviewUrl}
+          workspacePath={bootstrap.workspaceRootPath}
+          initialSnapshot={bootstrap.initialAgentSnapshot}
+          autoStartMessage={shouldAutoStartSessionCanvasAgentTurn({
+            initialized: bootstrap.metadata.initialized,
+            initialPrompt: bootstrap.initialAgentPrompt,
+            runState: bootstrap.metadata.runState ?? null,
+          }) ? bootstrap.initialAgentPrompt : null}
+          onRequestAddFiles={() => handleOpenAgentFileBrowser(panel.id)}
+          isAddingFiles={isAgentFileInsertPending && agentFileTargetPanelId === panel.id}
+          isMobileViewport={isMobileViewport}
         />
       );
     }
@@ -2300,16 +2318,12 @@ export function SessionCanvasWorkspace({
         shellKind: bootstrap.terminalShellKind,
         panelBootstrapCommand,
       });
-      const shouldBootstrap = terminalPanel.payload.role === 'startup'
-        ? (
-            bootstrap.terminalPersistenceMode === 'shell'
-              ? Boolean(bootstrapCommand)
-              : layout.bootstrap.startupLaunchVersion !== SESSION_CANVAS_STARTUP_BOOTSTRAP_VERSION
-          )
-        : (
-            bootstrap.terminalPersistenceMode === 'shell'
-            && Boolean(bootstrapCommand)
-          );
+      const shouldBootstrap = shouldBootstrapSessionCanvasTerminalPanel({
+        panel: terminalPanel,
+        persistenceMode: bootstrap.terminalPersistenceMode,
+        bootstrapCommand,
+        startupLaunchVersion: layout.bootstrap.startupLaunchVersion,
+      });
 
       return (
         <TerminalPanel
@@ -2323,7 +2337,7 @@ export function SessionCanvasWorkspace({
           shouldBootstrap={shouldBootstrap}
           onBootstrapComplete={
             terminalPanel.payload.role === 'startup'
-              ? () => markBootstrapComplete('startupStarted')
+              ? markStartupBootstrapComplete
               : () => {}
           }
           onOpenPreview={handleOpenPreviewUrl}
@@ -2365,22 +2379,24 @@ export function SessionCanvasWorkspace({
       />
     );
   }, [
-    bootstrap.initialCommands.agentCommand,
     bootstrap.initialCommands.startupCommand,
     bootstrap.metadata.gitRepos,
     bootstrap.terminalEnvironments,
     bootstrap.terminalPersistenceMode,
     bootstrap.terminalShellKind,
     bootstrap.workspaceRootPath,
-    layout.bootstrap.agentLaunchVersion,
     layout.bootstrap.startupLaunchVersion,
-    markBootstrapComplete,
+    markStartupBootstrapComplete,
+    registerAgentInputHandle,
     handleOpenPreviewUrl,
-    registerAgentTerminalHandle,
     sessionId,
     terminalServiceError,
     terminalServiceReady,
     updatePanel,
+    handleOpenAgentFileBrowser,
+    isAgentFileInsertPending,
+    agentFileTargetPanelId,
+    isMobileViewport,
   ]);
 
   const explorerState = {
@@ -2489,29 +2505,11 @@ export function SessionCanvasWorkspace({
                 <button
                   type="button"
                   className={mobileToolbarButtonClass}
-                  onClick={openCommandPalette}
-                  aria-label="Search workspace"
-                  title="Search workspace"
-                >
-                  <Search className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  className={mobileToolbarButtonClass}
                   onClick={handleAddTerminal}
                   aria-label="Add terminal"
                   title="Add terminal"
                 >
                   <TerminalSquare className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  className={mobileToolbarButtonClass}
-                  onClick={handleAddPreview}
-                  aria-label="Add preview"
-                  title="Add preview"
-                >
-                  <Monitor className="h-4 w-4" />
                 </button>
                 <button
                   type="button"
@@ -2522,16 +2520,6 @@ export function SessionCanvasWorkspace({
                   title="Add git panel"
                 >
                   <GitBranch className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  className={mobileToolbarButtonClass}
-                  onClick={toggleExplorer}
-                  aria-label={mobileExplorerCollapsed ? 'Open explorer' : 'Close explorer'}
-                  aria-pressed={!mobileExplorerCollapsed}
-                  title={mobileExplorerCollapsed ? 'Open explorer' : 'Close explorer'}
-                >
-                  <PanelLeft className="h-4 w-4" />
                 </button>
                 <button
                   type="button"

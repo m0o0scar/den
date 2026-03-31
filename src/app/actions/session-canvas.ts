@@ -12,17 +12,17 @@ import {
 } from './git';
 import { discoverProjectGitRepos } from './project';
 import {
+  getSessionAgentSnapshot,
   getSessionMetadata,
   readSessionLaunchContext,
   terminateSessionStartupScript,
-  writeSessionPromptFile,
+  type SessionAgentSnapshot,
   type SessionLaunchContext,
   type SessionMetadata,
 } from './session';
-import { buildSessionAgentTerminalCommand } from '@/lib/ad-hoc-agent';
 import { buildAgentStartupPrompt } from '@/lib/agent-startup-prompt';
 import { getErrorMessage } from '@/lib/error-utils';
-import { getLocalDb } from '@/lib/local-db';
+import { readLocalState, updateLocalState } from '@/lib/local-db';
 import {
   clampSessionCanvasScale,
   createDefaultSessionCanvasLayout,
@@ -81,21 +81,18 @@ export type SessionCanvasBootstrapResult =
       layout: SessionCanvasLayout;
       terminalPersistenceMode: 'tmux' | 'shell';
       terminalShellKind: 'posix' | 'powershell';
-      terminalSources: {
-        agentTerminalSrc: string;
-        defaultTerminalSrc: string;
-      };
       terminalEnvironments: Array<{ name: string; value: string }>;
       repoDisplayName: string | null;
       sessionIconPath: string | null;
       launchContext: SessionCanvasLaunchContext | null;
+      initialAgentPrompt: string | null;
       projectGitRepoRelativePaths: string[];
       explorerRoots: SessionCanvasExplorerRoot[];
       workspaceRootPath: string;
       restoredFromSavedLayout: boolean;
       savedLayoutVersion: number | null;
+      initialAgentSnapshot: SessionAgentSnapshot | null;
       initialCommands: {
-        agentCommand: string | null;
         startupCommand: string | null;
       };
     }
@@ -223,12 +220,12 @@ function toExplorerRoots(metadata: SessionMetadata): SessionCanvasExplorerRoot[]
 }
 
 function readSavedSessionCanvasLayout(sessionName: string): SessionCanvasLayout | null {
-  const db = getLocalDb();
-  const row = db.prepare(`
-    SELECT session_name, layout_json, updated_at
-    FROM session_canvas_layouts
-    WHERE session_name = ?
-  `).get(sessionName) as SessionCanvasLayoutRow | undefined;
+  const stored = readLocalState().sessionCanvasLayouts[sessionName];
+  const row = stored ? {
+    session_name: stored.sessionName,
+    layout_json: stored.layoutJson,
+    updated_at: stored.updatedAt,
+  } : undefined;
 
   if (!row?.layout_json) {
     return null;
@@ -314,14 +311,13 @@ export async function saveSessionCanvasLayout(
       panels: normalizeCanvasPanels(normalizedLayout.panels),
     };
 
-    const db = getLocalDb();
-    db.prepare(`
-      INSERT INTO session_canvas_layouts (session_name, layout_json, updated_at)
-      VALUES (?, ?, datetime('now'))
-      ON CONFLICT(session_name) DO UPDATE SET
-        layout_json = excluded.layout_json,
-        updated_at = excluded.updated_at
-    `).run(sessionId, JSON.stringify(sanitizedLayout));
+    updateLocalState((state) => {
+      state.sessionCanvasLayouts[sessionId] = {
+        sessionName: sessionId,
+        layoutJson: JSON.stringify(sanitizedLayout),
+        updatedAt: new Date().toISOString(),
+      };
+    });
 
     return { success: true };
   } catch (error) {
@@ -337,9 +333,10 @@ export async function getSessionCanvasBootstrap(sessionId: string): Promise<Sess
       return { success: false, error: 'Session not found' };
     }
 
-    const [resolvedProject, launchContextResult] = await Promise.all([
+    const [resolvedProject, launchContextResult, initialAgentSnapshotResult] = await Promise.all([
       Promise.resolve(metadata.projectId ? getProjectById(metadata.projectId) : null),
       readSessionLaunchContext(sessionId),
+      getSessionAgentSnapshot(sessionId),
     ]);
 
     if (!launchContextResult.success) {
@@ -406,7 +403,7 @@ export async function getSessionCanvasBootstrap(sessionId: string): Promise<Sess
           ? discoveryResult.repos.map((repo) => repo.relativePath)
           : metadata.gitRepos.map((repo) => repo.relativeRepoPath));
 
-    const initialPrompt = buildAgentStartupPrompt({
+    const initialAgentPrompt = buildAgentStartupPrompt({
       taskDescription: parsedLaunch.launchContext?.rawInitialMessage || parsedLaunch.launchContext?.initialMessage,
       attachmentPaths: parsedLaunch.launchContext?.attachmentPaths || [],
       sessionMode: parsedLaunch.launchContext?.sessionMode,
@@ -415,33 +412,6 @@ export async function getSessionCanvasBootstrap(sessionId: string): Promise<Sess
       gitRepos: metadata.gitRepos,
       discoveredRepoRelativePaths: projectGitRepoRelativePaths,
     });
-    let initialPromptFilePath: string | null = null;
-    if (initialPrompt) {
-      const promptFileResult = await writeSessionPromptFile(sessionId, initialPrompt);
-      if (promptFileResult.success) {
-        initialPromptFilePath = promptFileResult.filePath ?? null;
-      } else {
-        console.warn('Failed to persist initial session prompt file; falling back to inline terminal bootstrap.', promptFileResult.error);
-      }
-    }
-
-    const agentProvider = (
-      parsedLaunch.launchContext?.agentProvider
-      || metadata.agentProvider
-      || metadata.agent
-      || 'codex'
-    );
-    const agentModel = parsedLaunch.launchContext?.model || metadata.model || '';
-    const agentReasoningEffort = parsedLaunch.launchContext?.reasoningEffort || metadata.reasoningEffort;
-    const agentCommand = buildSessionAgentTerminalCommand({
-      provider: agentProvider,
-      model: agentModel,
-      reasoningEffort: agentReasoningEffort,
-      shellKind: terminalSources.shellKind,
-      workingDirectory: metadata.workspacePath,
-      prompt: initialPrompt,
-      promptFilePath: initialPromptFilePath,
-    });
 
     return {
       success: true,
@@ -449,21 +419,20 @@ export async function getSessionCanvasBootstrap(sessionId: string): Promise<Sess
       layout: normalizedLayout,
       terminalPersistenceMode: terminalSources.persistenceMode,
       terminalShellKind: terminalSources.shellKind,
-      terminalSources: {
-        agentTerminalSrc: terminalSources.agentTerminalSrc,
-        defaultTerminalSrc: terminalSources.floatingTerminalSrc,
-      },
       terminalEnvironments,
       repoDisplayName,
       sessionIconPath: resolvedProject?.iconPath?.trim() || null,
       launchContext: parsedLaunch.launchContext,
+      initialAgentPrompt,
       projectGitRepoRelativePaths,
       explorerRoots: toExplorerRoots(metadata),
       workspaceRootPath: metadata.workspacePath,
       restoredFromSavedLayout: Boolean(savedLayout),
       savedLayoutVersion,
+      initialAgentSnapshot: initialAgentSnapshotResult.success
+        ? (initialAgentSnapshotResult.snapshot ?? null)
+        : null,
       initialCommands: {
-        agentCommand,
         startupCommand: buildShellBootstrapCommand(
           metadata.workspacePath,
           parsedLaunch.launchContext?.startupScript?.trim(),

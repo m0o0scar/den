@@ -25,8 +25,8 @@ export const SESSION_CANVAS_STARTUP_BOOTSTRAP_VERSION = 1;
 const SESSION_CANVAS_DEFAULT_TERMINAL_GROUP_X = 120;
 const SESSION_CANVAS_DEFAULT_TERMINAL_GROUP_Y = 96;
 const SESSION_CANVAS_DEFAULT_TERMINAL_GAP = 36;
-const SESSION_CANVAS_DEFAULT_AGENT_TERMINAL_WIDTH = 860;
-const SESSION_CANVAS_DEFAULT_AGENT_TERMINAL_HEIGHT = 600;
+const SESSION_CANVAS_DEFAULT_AGENT_TERMINAL_WIDTH = 800;
+const SESSION_CANVAS_DEFAULT_AGENT_TERMINAL_HEIGHT = 1000;
 const SESSION_CANVAS_EDGE_MARGIN = 24;
 const SESSION_CANVAS_TOP_MARGIN = 84;
 const SESSION_CANVAS_MIN_PANEL_WIDTH = 320;
@@ -394,6 +394,25 @@ export function buildSessionCanvasTerminalBootstrapCommand({
   );
 
   return bootstrapCommand || null;
+}
+
+export function shouldBootstrapSessionCanvasTerminalPanel(args: {
+  panel: SessionCanvasAgentTerminalPanel | SessionCanvasTerminalPanel;
+  persistenceMode: TerminalPersistenceMode;
+  bootstrapCommand?: string | null;
+  startupLaunchVersion?: number;
+}): boolean {
+  if (args.panel.type === 'agent-terminal') {
+    return false;
+  }
+
+  if (args.panel.payload.role === 'startup') {
+    return args.persistenceMode === 'shell'
+      ? Boolean(args.bootstrapCommand)
+      : args.startupLaunchVersion !== SESSION_CANVAS_STARTUP_BOOTSTRAP_VERSION;
+  }
+
+  return args.persistenceMode === 'shell' && Boolean(args.bootstrapCommand);
 }
 
 export function getSessionCanvasTerminalRole(
