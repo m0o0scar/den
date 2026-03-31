@@ -1,14 +1,19 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
-
 const APP_ROOT = process.cwd();
-const lockPath = path.join(APP_ROOT, '.next', 'dev', 'lock');
+const PORT_RANGE = '3200-3299';
+const dryRun = process.argv.includes('--dry-run');
+
+function getPlatformCommand(command) {
+  if (process.platform === 'darwin' && command === 'lsof') {
+    return '/usr/sbin/lsof';
+  }
+  return command;
+}
 
 function run(command, args) {
-  return spawnSync(command, args, {
+  return spawnSync(getPlatformCommand(command), args, {
     cwd: APP_ROOT,
     env: process.env,
     encoding: 'utf8',
@@ -19,8 +24,8 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function getHolderPids(targetPath) {
-  const result = run('/usr/sbin/lsof', ['-t', '--', targetPath]);
+function getListeningPids() {
+  const result = run('lsof', ['-t', '-nP', `-iTCP:${PORT_RANGE}`, '-sTCP:LISTEN']);
   if (result.error) {
     throw result.error;
   }
@@ -38,6 +43,26 @@ function getHolderPids(targetPath) {
       .split(/\s+/)
       .map((value) => Number.parseInt(value, 10))
       .filter((value) => Number.isInteger(value) && value > 0)
+  ));
+}
+
+function getListeningPortLabels(pid) {
+  const result = run('lsof', ['-nP', '-a', '-p', String(pid), '-iTCP', '-sTCP:LISTEN']);
+  if (result.status !== 0) {
+    return [];
+  }
+
+  return Array.from(new Set(
+    (result.stdout ?? '')
+      .split('\n')
+      .slice(1)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const match = line.match(/:(32\d\d)\s+\(LISTEN\)$/);
+        return match ? match[1] : null;
+      })
+      .filter(Boolean)
   ));
 }
 
@@ -84,22 +109,23 @@ async function terminatePid(pid) {
 }
 
 async function main() {
-  if (!fs.existsSync(lockPath)) {
-    console.log(`No Next.js dev lock found at ${lockPath}`);
-    return;
-  }
-
-  const pids = getHolderPids(lockPath);
+  const pids = getListeningPids();
   if (pids.length === 0) {
-    console.log(`No running process is holding ${lockPath}`);
-    console.log('The lock file may be stale. Remove it manually if restarting still fails.');
+    console.log(`No listening processes found on ${PORT_RANGE}`);
     return;
   }
 
   for (const pid of pids) {
     const label = getProcessLabel(pid);
+    const ports = getListeningPortLabels(pid);
+    if (dryRun) {
+      const portLabel = ports.length > 0 ? ` on ${ports.join(', ')}` : '';
+      console.log(`Would stop ${label} (${pid})${portLabel}`);
+      continue;
+    }
     const signal = await terminatePid(pid);
-    console.log(`Stopped ${label} (${pid}) via ${signal}`);
+    const portLabel = ports.length > 0 ? ` on ${ports.join(', ')}` : '';
+    console.log(`Stopped ${label} (${pid})${portLabel} via ${signal}`);
   }
 }
 

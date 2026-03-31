@@ -25,8 +25,8 @@
   ],
   "scripts": {
     "dev": "node ./bin/viba.mjs --dev",
-    "kill-dev": "node ./scripts/kill-next-dev.mjs",
-    "kill-orphan-dev": "node ./scripts/kill-orphan-next-servers.mjs",
+    "kill": "node ./scripts/kill-next-dev.mjs",
+    "list": "sh -c 'lsof -nP -iTCP:3200-3299 -sTCP:LISTEN || echo \"No listening processes on 32xx ports\"'",
     "tailscale": "node ./scripts/tailscale.mjs",
     "tailscale:stop": "node ./scripts/tailscale.mjs stop",
     "build": "next build",
