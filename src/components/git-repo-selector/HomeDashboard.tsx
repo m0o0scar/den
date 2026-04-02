@@ -21,6 +21,8 @@ export type HomeDashboardProps = {
   isLoaded?: boolean;
   isBootstrapLoaded?: boolean;
   isActivityLoaded?: boolean;
+  isRefreshing?: boolean;
+  lastUpdatedAt?: string | null;
   homeSearchQuery: string;
   homeProjectSort: HomeProjectSort;
   showLogout: boolean;
@@ -71,6 +73,8 @@ export function HomeDashboard({
   isLoaded,
   isBootstrapLoaded,
   isActivityLoaded,
+  isRefreshing = false,
+  lastUpdatedAt = null,
   homeSearchQuery,
   homeProjectSort,
   showLogout,
@@ -138,6 +142,14 @@ export function HomeDashboard({
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:flex-nowrap">
+          {isRefreshing ? (
+            <span
+              className="shrink-0 text-[11px] font-medium text-slate-500 dark:text-slate-400"
+              title={lastUpdatedAt ? `Last updated ${new Date(lastUpdatedAt).toLocaleString()}` : 'Refreshing cached home data'}
+            >
+              Syncing cached data...
+            </span>
+          ) : null}
           <label className="flex h-8 w-full items-center gap-2 rounded-lg border border-slate-200/90 bg-white/85 px-2.5 text-slate-700 shadow-none transition-colors lg:w-72 dark:border-slate-700 dark:bg-slate-900/85 dark:text-slate-200">
             <Search className="h-4 w-4 text-slate-400 dark:text-slate-500" />
             <input

@@ -23,12 +23,13 @@ import { normalizeProviderReasoningEffort } from '@/lib/agent/reasoning';
 import { resolveReasoningEffortSelection } from '@/lib/session-reasoning';
 import type {
   AgentProvider,
-  AppStatus,
   ModelOption,
   ProviderCatalogEntry,
   ReasoningEffort,
 } from '@/lib/types';
 import { useAppDialog } from '@/hooks/use-app-dialog';
+import { useAgentStatus } from '@/hooks/use-agent-status';
+import { getQueryCacheState } from '@/lib/query-cache';
 import {
   Bot,
   ChevronDown,
@@ -75,13 +76,6 @@ type FlashMessage = {
   tone: 'success' | 'error';
   text: string;
 } | null;
-
-type AgentStatusResponse = {
-  providers?: ProviderCatalogEntry[];
-  defaultProvider?: AgentProvider;
-  status: AppStatus | null;
-  error?: string;
-};
 
 function formatCredentialSubtitle(credential: Credential): string {
   if (credential.type === 'gitlab') {
@@ -154,18 +148,25 @@ export default function SettingsContent() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletingAgent, setDeletingAgent] =
     useState<AgentApiCredentialAgent | null>(null);
-  const [agentProviders, setAgentProviders] = useState<ProviderCatalogEntry[]>([]);
   const [selectedDefaultAgentProvider, setSelectedDefaultAgentProvider] =
     useState<AgentProvider>('codex');
   const [selectedDefaultAgentModel, setSelectedDefaultAgentModel] =
     useState('');
   const [selectedDefaultAgentReasoningEffort, setSelectedDefaultAgentReasoningEffort] =
     useState<ReasoningEffort | ''>('');
-  const [agentStatus, setAgentStatus] = useState<AppStatus | null>(null);
-  const [loadingAgentStatus, setLoadingAgentStatus] = useState(false);
-  const [agentDefaultsError, setAgentDefaultsError] = useState<string | null>(null);
   const [flashMessage, setFlashMessage] = useState<FlashMessage>(null);
   const { confirm: confirmDialog, dialog } = useAppDialog();
+
+  const agentStatusQuery = useAgentStatus(selectedDefaultAgentProvider, {
+    staleTime: 60_000,
+  });
+  const agentStatusCacheState = getQueryCacheState(agentStatusQuery);
+  const agentProviders = agentStatusQuery.data?.providers ?? [];
+  const agentStatus = agentStatusQuery.data?.status ?? null;
+  const loadingAgentStatus = agentStatusQuery.isPending && !agentStatusCacheState.hasCachedData;
+  const agentDefaultsError = agentStatusQuery.error instanceof Error
+    ? agentStatusQuery.error.message
+    : agentStatusQuery.data?.error ?? null;
 
   const githubCredentials = useMemo(
     () => credentials.filter((credential) => credential.type === 'github'),
@@ -185,38 +186,6 @@ export default function SettingsContent() {
       agentApiCredentials.map((credential) => [credential.agent, credential]),
     );
   }, [agentApiCredentials]);
-
-  const fetchAgentStatus = async (provider: AgentProvider) => {
-    setLoadingAgentStatus(true);
-    setAgentDefaultsError(null);
-
-    try {
-      const response = await fetch(
-        `/api/agent/status?provider=${encodeURIComponent(provider)}`,
-        { cache: 'no-store' },
-      );
-      const payload =
-        (await response.json().catch(() => null)) as AgentStatusResponse | null;
-      if (!payload) {
-        throw new Error('Failed to load agent runtime status.');
-      }
-
-      setAgentProviders(payload.providers ?? []);
-      setAgentStatus(payload.status);
-      setAgentDefaultsError(payload.error ?? null);
-    } catch (error) {
-      console.error('Failed to load default agent status:', error);
-      setAgentProviders([]);
-      setAgentStatus(null);
-      setAgentDefaultsError(
-        error instanceof Error
-          ? error.message
-          : 'Failed to load agent runtime status.',
-      );
-    } finally {
-      setLoadingAgentStatus(false);
-    }
-  };
 
   const reloadCredentials = async () => {
     const [gitResult, agentResult] = await Promise.all([
@@ -304,10 +273,6 @@ export default function SettingsContent() {
       isActive = false;
     };
   }, []);
-
-  useEffect(() => {
-    void fetchAgentStatus(selectedDefaultAgentProvider);
-  }, [selectedDefaultAgentProvider]);
 
   const displayedAgentProviders = useMemo(
     () =>
@@ -750,6 +715,7 @@ export default function SettingsContent() {
                             .filter(Boolean)
                             .join(' • ')
                         : 'Runtime status unavailable'}
+                    {agentStatusCacheState.isRefreshing ? ' • Refreshing cached status…' : ''}
                   </div>
                   <div>
                     Effective model:{' '}

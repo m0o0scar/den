@@ -1,9 +1,22 @@
 import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { GitStatus, GitLog, Project, Repository, AppSettings, FileDiffPayload, BranchTrackingInfo, GitError, GitWorktree, GitConflictState } from '@/lib/types';
+import { queryKeys } from '@/lib/query-cache';
 import { showGitErrorToast } from './use-toast';
 
 const API_BASE = '/api';
+
+function isStaleGitActionError(error: Error): boolean {
+  const normalizedMessage = error.message.toLowerCase();
+  return normalizedMessage.includes('not a git repository')
+    || normalizedMessage.includes('repository not found')
+    || normalizedMessage.includes('branch not found')
+    || normalizedMessage.includes('pathspec')
+    || normalizedMessage.includes('unknown revision')
+    || normalizedMessage.includes('did not match any file')
+    || normalizedMessage.includes('no such remote')
+    || normalizedMessage.includes('remote ref does not exist');
+}
 
 export function useSettings() {
   return useQuery<AppSettings & { resolvedDefaultFolder: string }>({
@@ -13,6 +26,8 @@ export function useSettings() {
       if (!res.ok) throw new Error('Failed to fetch settings');
       return res.json();
     },
+    meta: { persist: true },
+    placeholderData: (previousData) => previousData,
   });
 }
 
@@ -42,6 +57,9 @@ export function useProjects() {
       if (!res.ok) throw new Error('Failed to fetch projects');
       return res.json();
     },
+    meta: { persist: true },
+    placeholderData: (previousData) => previousData,
+    staleTime: 30_000,
   });
 }
 
@@ -60,6 +78,9 @@ export function useRepositories() {
       if (!res.ok) throw new Error('Failed to fetch repositories');
       return res.json();
     },
+    meta: { persist: true },
+    placeholderData: (previousData) => previousData,
+    staleTime: 30_000,
   });
 }
 
@@ -360,7 +381,7 @@ export function useGitBranches(repoPath: string | null) {
     trackingInfo: Record<string, BranchTrackingInfo>,
     worktrees: GitWorktree[],
   }>({
-    queryKey: ['git', repoPath, 'branches'],
+    queryKey: repoPath ? queryKeys.gitBranches(repoPath) : ['git', repoPath, 'branches'],
     queryFn: async () => {
       if (!repoPath) return null;
       const res = await fetch(`${API_BASE}/git/branches?path=${encodeURIComponent(repoPath)}`);
@@ -370,6 +391,9 @@ export function useGitBranches(repoPath: string | null) {
       return res.json();
     },
     enabled: !!repoPath,
+    meta: { persist: true },
+    placeholderData: (previousData) => previousData,
+    staleTime: 60_000,
   });
 }
 
@@ -709,6 +733,10 @@ export function useGitAction() {
       }
     },
     onError: (error: Error, variables) => {
+      if (isStaleGitActionError(error)) {
+        queryClient.invalidateQueries({ queryKey: ['git', variables.repoPath] });
+      }
+
       // Show error toast for git operations (except read-only actions)
       if (!READ_ONLY_ACTIONS.includes(variables.action) && !variables.suppressErrorToast) {
         const operationName = actionOperationNames[variables.action] || variables.action;

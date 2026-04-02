@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FolderGit2, Plus, X, ChevronRight, ChevronDown, Bot, Trash2, ExternalLink, CloudDownload, Monitor, Sun, Moon, Zap, FileText, HardDrive, Layers } from 'lucide-react';
 import FileBrowser from './FileBrowser';
 import {
@@ -74,12 +75,17 @@ import {
 import { SESSION_MOBILE_VIEWPORT_QUERY } from '@/lib/responsive';
 import { shouldUseDeviceFilePicker } from '@/lib/url';
 import { useAppDialog } from '@/hooks/use-app-dialog';
+import { useAgentStatus } from '@/hooks/use-agent-status';
 import {
   APP_PAGE_PANEL_CLASS,
   APP_PAGE_TOOLBAR_CLASS,
 } from '@/components/app-shell/AppPageSurface';
 import { useDialogKeyboardShortcuts } from '@/hooks/useDialogKeyboardShortcuts';
 import { useProjects } from '@/hooks/use-git';
+import {
+  getQueryCacheState,
+  queryKeys,
+} from '@/lib/query-cache';
 import SessionFileBrowser from './SessionFileBrowser';
 import { HomeDashboard } from './git-repo-selector/HomeDashboard';
 import { RepoSettingsDialog } from './git-repo-selector/RepoSettingsDialog';
@@ -108,7 +114,6 @@ const HOME_REPO_DISCOVERY_IDLE_TIMEOUT_MS = 4000;
 const HOME_REPO_DISCOVERY_MAX_AUTOSTART = 3;
 
 const SESSION_MODE_STORAGE_KEY = 'viba:new-session-mode';
-const AGENT_PROVIDER_MODEL_CACHE_STORAGE_KEY_PREFIX = 'viba:agent-provider-models:';
 const SESSION_TITLE_MAX_LENGTH = 120;
 const COMPACT_TASK_HEADER_THRESHOLD_PX = 1024;
 const STACKED_TASK_HEADER_THRESHOLD_PX = 960;
@@ -329,54 +334,6 @@ function areMentionsEqual(left: ActiveMention | null, right: ActiveMention | nul
     && left.query === right.query;
 }
 
-function readAgentModelCatalogCache(provider: AgentProvider): AgentModelCatalogCacheEntry | null {
-  if (typeof window === 'undefined') return null;
-
-  try {
-    const rawValue = window.localStorage.getItem(`${AGENT_PROVIDER_MODEL_CACHE_STORAGE_KEY_PREFIX}${provider}`);
-    if (!rawValue) return null;
-
-    const parsed = JSON.parse(rawValue) as {
-      models?: unknown;
-      defaultModel?: unknown;
-      updatedAt?: unknown;
-    };
-    const models = Array.isArray(parsed.models)
-      ? parsed.models.map(normalizeModelOption).filter((entry): entry is ModelOption => Boolean(entry))
-      : [];
-    const defaultModel = typeof parsed.defaultModel === 'string' && parsed.defaultModel.trim()
-      ? parsed.defaultModel
-      : null;
-    const updatedAt = typeof parsed.updatedAt === 'string' && parsed.updatedAt.trim()
-      ? parsed.updatedAt
-      : new Date(0).toISOString();
-
-    return {
-      models,
-      defaultModel,
-      updatedAt,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeAgentModelCatalogCache(
-  provider: AgentProvider,
-  entry: AgentModelCatalogCacheEntry,
-): void {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.localStorage.setItem(
-      `${AGENT_PROVIDER_MODEL_CACHE_STORAGE_KEY_PREFIX}${provider}`,
-      JSON.stringify(entry),
-    );
-  } catch {
-    // Ignore localStorage errors.
-  }
-}
-
 export default function GitRepoSelector({
   mode = 'home',
   projectPath = null,
@@ -387,6 +344,7 @@ export default function GitRepoSelector({
   showLogout = false,
   logoutEnabled = true,
 }: GitRepoSelectorProps) {
+  const queryClient = useQueryClient();
   const repoPath = projectPath ?? legacyRepoPath;
   const { data: projects = [] } = useProjects();
   const [isBrowsing, setIsBrowsing] = useState(false);
@@ -508,6 +466,30 @@ export default function GitRepoSelector({
   const taskDescriptionPanelRef = useRef<HTMLDivElement | null>(null);
   const mobileAttachmentInputRef = useRef<HTMLInputElement | null>(null);
 
+  const selectedProjectActivityQuery = useQuery({
+    queryKey: selectedRepo ? queryKeys.projectActivity(selectedRepo) : ['project', 'activity', 'idle'],
+    queryFn: async () => getProjectActivity(selectedRepo!),
+    enabled: mode === 'new' && !!selectedRepo,
+    meta: { persist: true },
+    placeholderData: (previousData) => previousData,
+    staleTime: 15_000,
+  });
+  const selectedProjectGitReposQuery = useQuery({
+    queryKey: selectedRepo ? queryKeys.projectGitRepos(selectedRepo) : ['project', 'git-repos', 'idle'],
+    queryFn: async () => discoverProjectGitReposWithBranches(selectedRepo!),
+    enabled: mode === 'new' && !!selectedRepo,
+    meta: { persist: true },
+    placeholderData: (previousData) => previousData,
+    staleTime: 5 * 60_000,
+  });
+  const selectedAgentStatusQuery = useAgentStatus(selectedAgentProvider, {
+    enabled: mode !== 'new' || Boolean(selectedRepo),
+    staleTime: 60_000,
+  });
+  const selectedProjectActivityCacheState = getQueryCacheState(selectedProjectActivityQuery);
+  const selectedProjectGitReposCacheState = getQueryCacheState(selectedProjectGitReposQuery);
+  const selectedAgentStatusCacheState = getQueryCacheState(selectedAgentStatusQuery);
+
   const collapsedSessionSetupLabel = 'Show Session Setup';
 
   const notifySessionsChanged = useCallback(() => {
@@ -519,22 +501,50 @@ export default function GitRepoSelector({
   }, []);
 
   const resetSelectedProjectState = useCallback((projectPath: string) => {
+    const cachedActivity = queryClient.getQueryData<Awaited<ReturnType<typeof getProjectActivity>>>(
+      queryKeys.projectActivity(projectPath),
+    );
+    const cachedGitRepos = queryClient.getQueryData<Awaited<ReturnType<typeof discoverProjectGitReposWithBranches>>>(
+      queryKeys.projectGitRepos(projectPath),
+    );
+
     hydratedAgentRuntimeRepoRef.current = null;
     setSelectedRepo(projectPath);
     setSelectedProjectId(null);
     setRepoFilesCache([]);
-    setProjectGitRepos([]);
-    setBranchesByRepo({});
-    setBaseBranchByRepo({});
-    setCurrentBranchName('');
-    setIsProjectGitReposTruncated(false);
-    setIsLoadingProjectGitRepos(true);
-    setIsLoadingProjectActivity(true);
-    setExistingSessions([]);
-    setExistingDrafts([]);
+    if (cachedGitRepos) {
+      const repoPaths = cachedGitRepos.repos.map((repo) => repo.repoPath);
+      const nextBranchesByRepo: Record<string, GitBranch[]> = {};
+      const nextBaseBranchByRepo: Record<string, string> = {};
+      for (const repoPath of repoPaths) {
+        const repoBranches = cachedGitRepos.branchesByRepo[repoPath] ?? [];
+        nextBranchesByRepo[repoPath] = repoBranches;
+        const currentBranch = repoBranches.find((branch) => branch.current)?.name;
+        if (currentBranch) {
+          nextBaseBranchByRepo[repoPath] = currentBranch;
+        } else if (repoBranches[0]?.name) {
+          nextBaseBranchByRepo[repoPath] = repoBranches[0].name;
+        }
+      }
+      setProjectGitRepos(repoPaths);
+      setBranchesByRepo(nextBranchesByRepo);
+      setBaseBranchByRepo(nextBaseBranchByRepo);
+      setCurrentBranchName(repoPaths[0] ? (nextBaseBranchByRepo[repoPaths[0]] || '') : '');
+      setIsProjectGitReposTruncated(cachedGitRepos.truncated);
+    } else {
+      setProjectGitRepos([]);
+      setBranchesByRepo({});
+      setBaseBranchByRepo({});
+      setCurrentBranchName('');
+      setIsProjectGitReposTruncated(false);
+    }
+    setIsLoadingProjectGitRepos(!cachedGitRepos);
+    setIsLoadingProjectActivity(!cachedActivity);
+    setExistingSessions(cachedActivity?.sessions ?? []);
+    setExistingDrafts(cachedActivity?.drafts ?? []);
     setStartupScript('');
     setDevServerScript('');
-  }, []);
+  }, [queryClient]);
 
   const beginSelectedProjectLoad = useCallback((projectPath: string) => {
     const requestId = selectedProjectLoadRequestRef.current + 1;
@@ -588,7 +598,12 @@ export default function GitRepoSelector({
 
     try {
       if (!includeGlobal && repo) {
-        const activity = await getProjectActivity(repo);
+        const activity = await queryClient.fetchQuery({
+          queryKey: queryKeys.projectActivity(repo),
+          queryFn: () => getProjectActivity(repo),
+          meta: { persist: true },
+          staleTime: 15_000,
+        });
         if (
           selectedProjectRequestId !== undefined
           && !isActiveSelectedProjectLoad(selectedProjectRequestId)
@@ -636,7 +651,7 @@ export default function GitRepoSelector({
         setIsLoadingProjectActivity(false);
       }
     }
-  }, [isActiveSelectedProjectLoad, mode, selectedRepo]);
+  }, [isActiveSelectedProjectLoad, mode, queryClient, selectedRepo]);
 
   const dismissRepoSettingsDialog = useCallback(() => {
     if (isSavingRepoSettings) return;
@@ -825,17 +840,6 @@ export default function GitRepoSelector({
   }, [mode]);
 
   useEffect(() => {
-    const nextCatalogs = Object.fromEntries(
-      SUPPORTED_AGENT_PROVIDERS
-        .map((provider) => [provider, readAgentModelCatalogCache(provider)] as const)
-        .filter((entry): entry is [typeof SUPPORTED_AGENT_PROVIDERS[number], AgentModelCatalogCacheEntry] => Boolean(entry[1])),
-    );
-
-    if (Object.keys(nextCatalogs).length === 0) return;
-    setCachedAgentModelCatalogs(nextCatalogs);
-  }, []);
-
-  useEffect(() => {
     if (mode === 'new' && !selectedRepo) {
       return;
     }
@@ -855,10 +859,83 @@ export default function GitRepoSelector({
     };
   }, [mode, refreshSessionData, selectedRepo]);
 
+  useEffect(() => {
+    if (!selectedProjectActivityQuery.data) return;
+    setExistingSessions(selectedProjectActivityQuery.data.sessions);
+    setExistingDrafts(selectedProjectActivityQuery.data.drafts);
+    setIsLoadingProjectActivity(false);
+  }, [selectedProjectActivityQuery.data]);
+
+  useEffect(() => {
+    if (!selectedProjectGitReposQuery.data) return;
+
+    const repoPaths = selectedProjectGitReposQuery.data.repos.map((repo) => repo.repoPath);
+    const nextBranchesByRepo: Record<string, GitBranch[]> = {};
+    const nextBaseBranchByRepo: Record<string, string> = {};
+    for (const repoPath of repoPaths) {
+      const repoBranches = selectedProjectGitReposQuery.data.branchesByRepo[repoPath] ?? [];
+      nextBranchesByRepo[repoPath] = repoBranches;
+      const currentBranch = repoBranches.find((branch) => branch.current)?.name;
+      if (currentBranch) {
+        nextBaseBranchByRepo[repoPath] = currentBranch;
+      } else if (repoBranches[0]?.name) {
+        nextBaseBranchByRepo[repoPath] = repoBranches[0].name;
+      }
+    }
+
+    setProjectGitRepos(repoPaths);
+    setBranchesByRepo(nextBranchesByRepo);
+    setBaseBranchByRepo(nextBaseBranchByRepo);
+    setIsProjectGitReposTruncated(selectedProjectGitReposQuery.data.truncated);
+    setCurrentBranchName(repoPaths[0] ? (nextBaseBranchByRepo[repoPaths[0]] || '') : '');
+    setIsLoadingProjectGitRepos(false);
+  }, [selectedProjectGitReposQuery.data]);
+
+  useEffect(() => {
+    const payload = selectedAgentStatusQuery.data;
+    if (!payload) return;
+
+    const supportedProviders = payload.providers.filter((entry) => (
+      entry.available
+      && (entry.id === 'codex' || entry.id === 'gemini' || entry.id === 'cursor')
+    ));
+    setAgentProviders(supportedProviders);
+    setAgentStatus(payload.status);
+    if (payload.status) {
+      setCachedAgentModelCatalogs((previous) => ({
+        ...previous,
+        [payload.status!.provider]: {
+          models: payload.status!.models,
+          defaultModel: payload.status!.defaultModel,
+          updatedAt: new Date().toISOString(),
+        },
+      }));
+    }
+    if (payload.error) {
+      setAgentSetupMessage(payload.error);
+    }
+    setIsLoadingAgentStatus(false);
+  }, [selectedAgentStatusQuery.data]);
+
+  useEffect(() => {
+    if (!selectedAgentStatusQuery.error) return;
+    setIsLoadingAgentStatus(false);
+    setAgentSetupMessage(
+      selectedAgentStatusQuery.error instanceof Error
+        ? selectedAgentStatusQuery.error.message
+        : 'Failed to load agent runtime status.',
+    );
+  }, [selectedAgentStatusQuery.error]);
+
   const loadProjectGitRepos = async (projectPath: string, selectedProjectRequestId?: number) => {
     setIsLoadingProjectGitRepos(true);
     try {
-      const discovery = await discoverProjectGitReposWithBranches(projectPath);
+      const discovery = await queryClient.fetchQuery({
+        queryKey: queryKeys.projectGitRepos(projectPath),
+        queryFn: () => discoverProjectGitReposWithBranches(projectPath),
+        meta: { persist: true },
+        staleTime: 5 * 60_000,
+      });
       if (
         selectedProjectRequestId !== undefined
         && !isActiveSelectedProjectLoad(selectedProjectRequestId)
@@ -2213,34 +2290,26 @@ export default function GitRepoSelector({
     provider: AgentProvider,
     options?: { silent?: boolean },
   ): Promise<AgentStatusResponse | null> => {
-    const cachedCatalog = readAgentModelCatalogCache(provider);
-    if (cachedCatalog) {
-      setCachedAgentModelCatalogs((previous) => {
-        const existing = previous[provider];
-        if (
-          existing
-          && existing.updatedAt === cachedCatalog.updatedAt
-          && existing.defaultModel === cachedCatalog.defaultModel
-          && JSON.stringify(existing.models) === JSON.stringify(cachedCatalog.models)
-        ) {
-          return previous;
-        }
-        return { ...previous, [provider]: cachedCatalog };
-      });
-    }
-
     if (!options?.silent) {
       setIsLoadingAgentStatus(true);
     }
 
     try {
-      const response = await fetch(`/api/agent/status?provider=${encodeURIComponent(provider)}`, {
-        cache: 'no-store',
+      const payload = await queryClient.fetchQuery({
+        queryKey: queryKeys.agentStatus(provider),
+        queryFn: async () => {
+          const response = await fetch(`/api/agent/status?provider=${encodeURIComponent(provider)}`, {
+            cache: 'no-store',
+          });
+          const result = await response.json().catch(() => null) as AgentStatusResponse | null;
+          if (!result) {
+            throw new Error('Failed to load agent runtime status.');
+          }
+          return result;
+        },
+        meta: { persist: true },
+        staleTime: 60_000,
       });
-      const payload = await response.json().catch(() => null) as AgentStatusResponse | null;
-      if (!payload) {
-        throw new Error('Failed to load agent runtime status.');
-      }
 
       const supportedProviders = payload.providers.filter((entry) => (
         entry.available
@@ -2255,7 +2324,6 @@ export default function GitRepoSelector({
           updatedAt: new Date().toISOString(),
         };
         setCachedAgentModelCatalogs((previous) => ({ ...previous, [provider]: nextCatalog }));
-        writeAgentModelCatalogCache(provider, nextCatalog);
       }
       if (provider === selectedAgentProvider) {
         setAgentStatus(payload.status);
@@ -2276,7 +2344,7 @@ export default function GitRepoSelector({
         setIsLoadingAgentStatus(false);
       }
     }
-  }, [selectedAgentProvider]);
+  }, [queryClient, selectedAgentProvider]);
 
   const handleInstallAgentProvider = useCallback(async (provider: AgentProvider) => {
     setIsInstallingAgentProvider(true);
@@ -2344,7 +2412,12 @@ export default function GitRepoSelector({
               updatedAt: new Date().toISOString(),
             };
             setCachedAgentModelCatalogs((previous) => ({ ...previous, [provider]: nextCatalog }));
-            writeAgentModelCatalogCache(provider, nextCatalog);
+            queryClient.setQueryData(queryKeys.agentStatus(provider), (existing: AgentStatusResponse | undefined) => ({
+              providers: existing?.providers ?? agentProviders,
+              defaultProvider: existing?.defaultProvider ?? 'codex',
+              status: event.status,
+              error: undefined,
+            }));
             setAgentSetupMessage(`${agentProviderLabel(provider, agentProviders)} installed.`);
             continue;
           }
@@ -2364,7 +2437,7 @@ export default function GitRepoSelector({
       setIsInstallingAgentProvider(false);
       setInstallingAgentProvider(null);
     }
-  }, [agentProviders, fetchAgentStatus, selectedAgentProvider]);
+  }, [agentProviders, fetchAgentStatus, queryClient, selectedAgentProvider]);
 
   const handleAgentLogin = useCallback(async (provider: AgentProvider) => {
     setAgentSetupMessage(null);
@@ -2448,11 +2521,6 @@ export default function GitRepoSelector({
     return { ready: true, status };
   }, [agentProviders, agentSetupMessage, fetchAgentStatus, selectedAgentProvider]);
 
-  useEffect(() => {
-    if (mode !== 'new') return;
-    void fetchAgentStatus(selectedAgentProvider);
-  }, [fetchAgentStatus, mode, selectedAgentProvider]);
-
   const displayedAgentStatus = useMemo(() => {
     if (!agentStatus || agentStatus.provider !== selectedAgentProvider) {
       return null;
@@ -2466,15 +2534,20 @@ export default function GitRepoSelector({
     }
 
     if (!displayedAgentStatus) {
-      return 'Runtime status unavailable';
+      return selectedAgentStatusCacheState.hasCachedData
+        ? 'Using cached runtime status'
+        : 'Runtime status unavailable';
     }
 
-    return [
+    const summary = [
       displayedAgentStatus.installed ? 'Installed' : 'Not installed',
       displayedAgentStatus.loggedIn ? 'Logged in' : 'Login required',
       displayedAgentStatus.version ? `v${displayedAgentStatus.version}` : null,
     ].filter(Boolean).join(' • ');
-  }, [displayedAgentStatus, isLoadingAgentStatus]);
+    return selectedAgentStatusCacheState.isRefreshing
+      ? `${summary} • Refreshing cached status…`
+      : summary;
+  }, [displayedAgentStatus, isLoadingAgentStatus, selectedAgentStatusCacheState.hasCachedData, selectedAgentStatusCacheState.isRefreshing]);
 
   const agentAccountSummary = useMemo(() => {
     if (!displayedAgentStatus?.account?.email) return null;
@@ -3377,7 +3450,7 @@ export default function GitRepoSelector({
       )}
 
       {mode === 'home' && homeProjectGitSelector && (
-        <div className="fixed inset-0 z-[1003] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-sm">
+        <div className="app-dark-overlay fixed inset-0 z-[1003] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl app-dark-modal">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-white/10">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white">Select Git Repository</h3>
@@ -3476,7 +3549,14 @@ export default function GitRepoSelector({
                   </label>
 
                   <div className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Git Repositories</span>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Git Repositories</span>
+                      {selectedProjectGitReposCacheState.isRefreshing ? (
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                          Refreshing cached repos...
+                        </span>
+                      ) : null}
+                    </div>
                     {isLoadingProjectGitRepos ? (
                       <div className={`flex h-12 items-center rounded-lg px-3 text-sm text-slate-500 dark:text-slate-400 ${newSessionRaisedSurfaceClass}`}>
                         <span className="loading loading-spinner loading-xs mr-2"></span>
@@ -3580,7 +3660,14 @@ export default function GitRepoSelector({
               </div>
 
               <div className={newSessionPanelClass}>
-                <h3 className="mb-4 text-lg font-bold text-slate-900 dark:text-white">Ongoing Tasks</h3>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Ongoing Tasks</h3>
+                  {selectedProjectActivityCacheState.isRefreshing ? (
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Refreshing cached tasks...
+                    </span>
+                  ) : null}
+                </div>
                 <div className="space-y-2">
                   {isLoadingProjectActivity ? (
                     <div className={`flex items-center rounded-lg px-3 py-4 text-sm text-slate-500 dark:text-slate-400 ${newSessionSurfaceClass}`}>
@@ -3647,7 +3734,14 @@ export default function GitRepoSelector({
               </div>
 
               <div className={newSessionPanelClass}>
-                <h3 className="mb-4 text-lg font-bold text-slate-900 dark:text-white">Drafts</h3>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Drafts</h3>
+                  {selectedProjectActivityCacheState.isRefreshing ? (
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Refreshing cached drafts...
+                    </span>
+                  ) : null}
+                </div>
                 <div className="space-y-2">
                   {isLoadingProjectActivity ? (
                     <div className={`flex items-center rounded-lg px-3 py-4 text-sm text-slate-500 dark:text-slate-400 ${newSessionSurfaceClass}`}>
