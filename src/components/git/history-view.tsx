@@ -31,6 +31,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { listSessions, SessionMetadata } from '@/app/actions/session';
 import { subscribeToSessionsUpdated } from '@/lib/session-updates';
 import { buildPullAllPlan, buildPullAllToastPayload, parseTrackingUpstream } from './pull-all-utils';
+import { queryKeys } from '@/lib/query-cache';
 
 const LazyCommitChangesView = dynamic(
   () => import('./commit-changes-view').then((module) => module.CommitChangesView),
@@ -55,6 +56,11 @@ type RepoCredentialOption = {
   type: 'github' | 'gitlab';
   username: string;
   serverUrl?: string;
+};
+
+type TrackingBranchInfo = {
+  remote: string;
+  branch: string;
 };
 
 function clampHistoryPanelHeight(height: number): number {
@@ -139,6 +145,24 @@ function formatRepoCredentialOptionLabel(credential: RepoCredentialOption): stri
     // Keep fallback host.
   }
   return `GitLab - ${credential.username} @ ${host}`;
+}
+
+function getPreferredRemote(remotes: string[], tracking: TrackingBranchInfo | null): string {
+  if (tracking?.remote && remotes.includes(tracking.remote)) {
+    return tracking.remote;
+  }
+  return remotes[0] ?? '';
+}
+
+function getDefaultPushRemoteBranch(
+  localBranch: string,
+  remote: string,
+  tracking: TrackingBranchInfo | null,
+): string {
+  if (tracking?.remote === remote && tracking.branch) {
+    return tracking.branch;
+  }
+  return localBranch;
 }
 
 // File status icon component
@@ -398,7 +422,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   const [pushSelectedRemote, setPushSelectedRemote] = useState<string>('');
   const [pushRemoteBranches, setPushRemoteBranches] = useState<string[]>([]);
   const [pushSelectedRemoteBranch, setPushSelectedRemoteBranch] = useState<string>('');
-  const [pushTrackingBranch, setPushTrackingBranch] = useState<{ remote: string; branch: string } | null>(null);
+  const [pushTrackingBranch, setPushTrackingBranch] = useState<TrackingBranchInfo | null>(null);
   const [pushRebaseFirst, setPushRebaseFirst] = useState(false);
   const [pushForcePush, setPushForcePush] = useState(false);
   const [pushLocalOnlyTags, setPushLocalOnlyTags] = useState(true);
@@ -2246,13 +2270,24 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   }, [isMergeOpen, mergeSourceBranch, mergeTargetBranch, repoPath, runGitAction]);
 
   const confirmPushToRemote = async (branch: string) => {
+    const cachedRemotes = queryClient.getQueryData<string[]>(queryKeys.gitRemotes(repoPath)) ?? [];
+    const cachedTrackingBranch = queryClient.getQueryData<TrackingBranchInfo | null>(
+      queryKeys.gitTrackingBranch(repoPath, branch),
+    ) ?? null;
+    const cachedDefaultRemote = getPreferredRemote(cachedRemotes, cachedTrackingBranch);
+    const cachedRemoteBranches = cachedDefaultRemote
+      ? (queryClient.getQueryData<string[]>(queryKeys.gitRemoteBranches(repoPath, cachedDefaultRemote)) ?? [])
+      : [];
+
     setPushBranch(branch);
     setPushError(null);
-    setPushRemotes([]);
-    setPushRemoteBranches([]);
-    setPushSelectedRemote('');
-    setPushSelectedRemoteBranch('');
-    setPushTrackingBranch(null);
+    setPushRemotes(cachedRemotes);
+    setPushRemoteBranches(cachedRemoteBranches);
+    setPushSelectedRemote(cachedDefaultRemote);
+    setPushSelectedRemoteBranch(
+      cachedDefaultRemote ? getDefaultPushRemoteBranch(branch, cachedDefaultRemote, cachedTrackingBranch) : '',
+    );
+    setPushTrackingBranch(cachedTrackingBranch);
     setPushRebaseFirst(false);
     setPushForcePush(false);
     setPushLocalOnlyTags(true);
@@ -2260,62 +2295,81 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     setPushSquashMessage('');
     setIsPushOpen(true);
 
-    // Load remotes
     setPushLoadingRemotes(true);
+    setPushLoadingBranches(Boolean(cachedDefaultRemote));
     try {
-      const result = await runGitAction({
-        repoPath,
-        action: 'get-remotes',
-        data: {}
-      });
+      const [remotes, trackingBranch] = await Promise.all([
+        queryClient.fetchQuery({
+          queryKey: queryKeys.gitRemotes(repoPath),
+          queryFn: async () => {
+            const result = await runGitAction({
+              repoPath,
+              action: 'get-remotes',
+              data: {},
+            });
+            return Array.isArray(result.remotes)
+              ? result.remotes.filter((remote: unknown): remote is string => typeof remote === 'string' && remote.trim().length > 0)
+              : [];
+          },
+          staleTime: 60_000,
+          meta: { persist: true },
+        }),
+        queryClient.fetchQuery({
+          queryKey: queryKeys.gitTrackingBranch(repoPath, branch),
+          queryFn: async () => {
+            const result = await runGitAction({
+              repoPath,
+              action: 'get-tracking-branch',
+              data: { branch },
+            });
+            const tracking = result.tracking;
+            return tracking
+              && typeof tracking.remote === 'string'
+              && tracking.remote.trim().length > 0
+              && typeof tracking.branch === 'string'
+              && tracking.branch.trim().length > 0
+              ? { remote: tracking.remote, branch: tracking.branch }
+              : null;
+          },
+          staleTime: 30_000,
+          meta: { persist: true },
+        }),
+      ]);
 
-      if (!result.remotes || result.remotes.length === 0) {
+      if (remotes.length === 0) {
         setPushError('No remote repository configured. Please add a remote first.');
-        setPushLoadingRemotes(false);
+        setPushRemotes([]);
+        setPushSelectedRemote('');
+        setPushRemoteBranches([]);
+        setPushSelectedRemoteBranch('');
+        setPushTrackingBranch(null);
         return;
       }
 
-      setPushRemotes(result.remotes);
+      const defaultRemote = getPreferredRemote(remotes, trackingBranch);
+      const remoteBranches = defaultRemote
+        ? await queryClient.fetchQuery({
+          queryKey: queryKeys.gitRemoteBranches(repoPath, defaultRemote),
+          queryFn: async () => {
+            const result = await runGitAction({
+              repoPath,
+              action: 'get-remote-branches',
+              data: { remote: defaultRemote },
+            });
+            return Array.isArray(result.branches)
+              ? result.branches.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
+              : [];
+          },
+          staleTime: 60_000,
+          meta: { persist: true },
+        })
+        : [];
 
-      // Get tracking branch info
-      const trackingResult = await runGitAction({
-        repoPath,
-        action: 'get-tracking-branch',
-        data: { branch }
-      });
-
-      setPushTrackingBranch(trackingResult.tracking);
-
-      // Set default remote - use tracking remote if available and exists in remotes list, otherwise first remote
-      const trackingRemote = trackingResult.tracking?.remote;
-      const defaultRemote = (trackingRemote && result.remotes.includes(trackingRemote))
-        ? trackingRemote
-        : result.remotes[0];
+      setPushRemotes(remotes);
+      setPushTrackingBranch(trackingBranch);
       setPushSelectedRemote(defaultRemote);
-
-      // Load branches for the default remote
-      setPushLoadingBranches(true);
-      const branchesResult = await runGitAction({
-        repoPath,
-        action: 'get-remote-branches',
-        data: { remote: defaultRemote }
-      });
-
-      setPushRemoteBranches(branchesResult.branches || []);
-
-      // Set default remote branch - use tracking branch if on same remote, otherwise use branch name
-      if (trackingResult.tracking?.remote === defaultRemote && trackingResult.tracking?.branch) {
-        setPushSelectedRemoteBranch(trackingResult.tracking.branch);
-      } else {
-        // Default to same name as local branch, or first branch if local branch name doesn't exist
-        const localBranchName = branch;
-        if (branchesResult.branches?.includes(localBranchName)) {
-          setPushSelectedRemoteBranch(localBranchName);
-        } else {
-          // Will create new branch with local branch name
-          setPushSelectedRemoteBranch(localBranchName);
-        }
-      }
+      setPushRemoteBranches(remoteBranches);
+      setPushSelectedRemoteBranch(getDefaultPushRemoteBranch(branch, defaultRemote, trackingBranch));
     } catch (e) {
       console.error(e);
       setPushError((e as Error).message || 'Failed to load remote information');
@@ -2327,24 +2381,33 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
 
   const handlePushRemoteChange = async (remote: string) => {
     setPushSelectedRemote(remote);
+    setPushError(null);
     setPushLoadingBranches(true);
-    setPushRemoteBranches([]);
+    const cachedRemoteBranches = queryClient.getQueryData<string[]>(
+      queryKeys.gitRemoteBranches(repoPath, remote),
+    ) ?? [];
+    setPushRemoteBranches(cachedRemoteBranches);
+    setPushSelectedRemoteBranch(getDefaultPushRemoteBranch(pushBranch || '', remote, pushTrackingBranch));
 
     try {
-      const branchesResult = await runGitAction({
-        repoPath,
-        action: 'get-remote-branches',
-        data: { remote }
+      const remoteBranches = await queryClient.fetchQuery({
+        queryKey: queryKeys.gitRemoteBranches(repoPath, remote),
+        queryFn: async () => {
+          const result = await runGitAction({
+            repoPath,
+            action: 'get-remote-branches',
+            data: { remote },
+          });
+          return Array.isArray(result.branches)
+            ? result.branches.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        },
+        staleTime: 60_000,
+        meta: { persist: true },
       });
 
-      setPushRemoteBranches(branchesResult.branches || []);
-
-      // Set default branch - tracking branch if on this remote, otherwise local branch name
-      if (pushTrackingBranch?.remote === remote && pushTrackingBranch?.branch) {
-        setPushSelectedRemoteBranch(pushTrackingBranch.branch);
-      } else {
-        setPushSelectedRemoteBranch(pushBranch || '');
-      }
+      setPushRemoteBranches(remoteBranches);
+      setPushSelectedRemoteBranch(getDefaultPushRemoteBranch(pushBranch || '', remote, pushTrackingBranch));
     } catch (e) {
       console.error(e);
       setPushError((e as Error).message || 'Failed to load remote branches');
@@ -2415,6 +2478,21 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
         action: 'fetch',
         data: { remote: pushSelectedRemote }
       });
+
+      if (pushBranch && pushSelectedRemote && pushSelectedRemoteBranch) {
+        queryClient.setQueryData<TrackingBranchInfo | null>(
+          queryKeys.gitTrackingBranch(repoPath, pushBranch),
+          { remote: pushSelectedRemote, branch: pushSelectedRemoteBranch },
+        );
+        queryClient.setQueryData<string[]>(
+          queryKeys.gitRemoteBranches(repoPath, pushSelectedRemote),
+          (current = []) => (
+            current.includes(pushSelectedRemoteBranch)
+              ? current
+              : [...current, pushSelectedRemoteBranch]
+          ),
+        );
+      }
 
       setIsPushOpen(false);
       setPushBranch(null);
@@ -4329,7 +4407,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 <span className="text-xl">⚠️</span>
                 <span>{pushError}</span>
               </div>
-            ) : pushLoadingRemotes ? (
+            ) : pushLoadingRemotes && pushRemotes.length === 0 ? (
               <div className="flex justify-center py-8">
                 <span className="loading loading-spinner loading-lg"></span>
               </div>
@@ -4337,15 +4415,20 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
               <div className="flex flex-col gap-4">
                 <div className="form-control w-full flex flex-row items-center justify-between gap-4">
                   <label className="label flex-shrink-0"><span className="label-text">Remote Repository</span></label>
-                  <select className="select select-bordered w-64" value={pushSelectedRemote} onChange={(e) => handlePushRemoteChange(e.target.value)} disabled={isPushing}>
-                    {pushRemotes.map((remote) => <option key={remote} value={remote}>{remote}</option>)}
-                  </select>
+                  <div className="flex flex-col items-end gap-1">
+                    <select className="select select-bordered w-64" value={pushSelectedRemote} onChange={(e) => handlePushRemoteChange(e.target.value)} disabled={isPushing}>
+                      {pushRemotes.map((remote) => <option key={remote} value={remote}>{remote}</option>)}
+                    </select>
+                    {pushLoadingRemotes && pushRemotes.length > 0 && (
+                      <span className="text-xs text-base-content/60">Refreshing cached remotes...</span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="form-control w-full flex flex-row items-center justify-between gap-4">
                   <label className="label flex-shrink-0"><span className="label-text">Remote Branch</span></label>
                   <div className="flex flex-col items-end gap-1 w-64">
-                    {pushLoadingBranches ? (
+                    {pushLoadingBranches && pushRemoteBranches.length === 0 ? (
                       <div className="flex items-center gap-2 p-3 border rounded-lg bg-base-200 opacity-70 w-full">
                         <span className="loading loading-spinner loading-xs"></span> Loading branches...
                       </div>
@@ -4354,6 +4437,9 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                         {pushBranch && !pushRemoteBranches.includes(pushBranch) && <option value={pushBranch}>{pushBranch} (new)</option>}
                         {pushRemoteBranches.map((branch) => <option key={branch} value={branch}>{branch}{pushTrackingBranch?.remote === pushSelectedRemote && pushTrackingBranch?.branch === branch ? ' (tracking)' : ''}</option>)}
                       </select>
+                    )}
+                    {pushLoadingBranches && pushRemoteBranches.length > 0 && (
+                      <span className="text-xs text-base-content/60">Refreshing cached branches...</span>
                     )}
                     {pushSelectedRemoteBranch && !pushRemoteBranches.includes(pushSelectedRemoteBranch) && (
                       <div className="label"><span className="label-text-alt text-warning">New branch will be created</span></div>

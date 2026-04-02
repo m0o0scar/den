@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Monitor, Moon, Sun, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import {
@@ -22,7 +23,11 @@ import {
   stopProjectService,
   type ProjectServiceStatus,
 } from '@/app/actions/project-service';
-import { cloneRemoteProject, discoverProjectGitRepos } from '@/app/actions/project';
+import {
+  cloneRemoteProject,
+  discoverProjectGitRepos,
+  type DiscoverProjectGitReposResult,
+} from '@/app/actions/project';
 import {
   deleteQuickCreateDraft,
   getHomeQuickCreateState,
@@ -40,10 +45,14 @@ import {
 import { filterHomeProjects } from '@/lib/home-dashboard-state';
 import { groupHomeProjectSessionsByProject } from '@/lib/home-project-sessions';
 import {
-  omitRecordKeys,
   toHomeProjectGitRepos,
   type HomeProjectGitRepo,
 } from '@/lib/home-project-git';
+import {
+  getLatestQueryUpdatedAt,
+  getQueryCacheState,
+  queryKeys,
+} from '@/lib/query-cache';
 import type { Credential } from '@/lib/credentials';
 import {
   findClientProjectByReference,
@@ -136,6 +145,7 @@ export default function HomeDashboardContainer({
   logoutEnabled = true,
 }: HomeDashboardContainerProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const [projects, setProjects] = useState<Project[]>([]);
   const [config, setConfig] = useState<Config | null>(null);
@@ -144,8 +154,6 @@ export default function HomeDashboardContainer({
   const [quickCreateDrafts, setQuickCreateDrafts] = useState<QuickCreateDraft[]>([]);
   const [quickCreateActiveCount, setQuickCreateActiveCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [isBootstrapLoaded, setIsBootstrapLoaded] = useState(false);
-  const [isActivityLoaded, setIsActivityLoaded] = useState(false);
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
   const [homeProjectSort, setHomeProjectSort] = useState<HomeProjectSort>(() => (
     readStoredHomeProjectSort() ?? DEFAULT_HOME_PROJECT_SORT
@@ -181,8 +189,6 @@ export default function HomeDashboardContainer({
   const [isLoadingCloneCredentialOptions, setIsLoadingCloneCredentialOptions] = useState(false);
 
   const [brokenRepoCardIcons, setBrokenRepoCardIcons] = useState<Record<string, boolean>>({});
-  const [projectGitReposByPath, setProjectGitReposByPath] = useState<Record<string, HomeProjectGitRepo[]>>({});
-  const [discoveringHomeProjectGitRepos, setDiscoveringHomeProjectGitRepos] = useState<Record<string, boolean>>({});
   const [homeProjectGitSelector, setHomeProjectGitSelector] = useState<{
     projectKey: string;
     projectLabel: string;
@@ -201,8 +207,75 @@ export default function HomeDashboardContainer({
   const [isQuickCreateDialogOpen, setIsQuickCreateDialogOpen] = useState(false);
   const [quickCreateDraftForEdit, setQuickCreateDraftForEdit] = useState<QuickCreateDraft | null>(null);
 
-  const upsertProject = useCallback((project: Project) => {
+  const homeBootstrapQuery = useQuery({
+    queryKey: queryKeys.homeBootstrap(),
+    queryFn: getHomeDashboardBootstrap,
+    meta: { persist: true },
+    placeholderData: (previousData) => previousData,
+    staleTime: 30_000,
+  });
+  const homeActivityQuery = useQuery({
+    queryKey: queryKeys.homeActivity(),
+    queryFn: async () => {
+      const [sessions, drafts] = await Promise.all([listSessions(), listDrafts()]);
+      return { sessions, drafts };
+    },
+    meta: { persist: true },
+    placeholderData: (previousData) => previousData,
+    staleTime: 15_000,
+  });
+  const homeQuickCreateQuery = useQuery({
+    queryKey: queryKeys.homeQuickCreate(),
+    queryFn: getHomeQuickCreateState,
+    meta: { persist: true },
+    placeholderData: (previousData) => previousData,
+    staleTime: 5_000,
+  });
+  const bootstrapCacheState = getQueryCacheState(homeBootstrapQuery);
+  const activityCacheState = getQueryCacheState(homeActivityQuery);
+  const quickCreateCacheState = getQueryCacheState(homeQuickCreateQuery);
+  const isBootstrapLoaded = homeBootstrapQuery.isFetched || bootstrapCacheState.hasCachedData;
+  const isActivityLoaded = homeActivityQuery.isFetched || activityCacheState.hasCachedData;
+
+  const updateProjectsState = useCallback((
+    updater: Project[] | ((previous: Project[]) => Project[]),
+  ) => {
     setProjects((previous) => {
+      const nextProjects = typeof updater === 'function'
+        ? (updater as (previous: Project[]) => Project[])(previous)
+        : updater;
+      queryClient.setQueryData(queryKeys.homeBootstrap(), (existing: Awaited<ReturnType<typeof getHomeDashboardBootstrap>> | undefined) => {
+        if (!existing) return existing;
+        return {
+          ...existing,
+          projects: nextProjects,
+        };
+      });
+      queryClient.setQueryData(['projects'], nextProjects);
+      return nextProjects;
+    });
+  }, [queryClient]);
+
+  const updateConfigState = useCallback((
+    updater: Config | null | ((previous: Config | null) => Config | null),
+  ) => {
+    setConfig((previous) => {
+      const nextConfig = typeof updater === 'function'
+        ? (updater as (previous: Config | null) => Config | null)(previous)
+        : updater;
+      queryClient.setQueryData(queryKeys.homeBootstrap(), (existing: Awaited<ReturnType<typeof getHomeDashboardBootstrap>> | undefined) => {
+        if (!existing || !nextConfig) return existing;
+        return {
+          ...existing,
+          config: nextConfig,
+        };
+      });
+      return nextConfig;
+    });
+  }, [queryClient]);
+
+  const upsertProject = useCallback((project: Project) => {
+    updateProjectsState((previous) => {
       const existingIndex = previous.findIndex((candidate) => candidate.id === project.id);
       if (existingIndex === -1) {
         return [...previous, project];
@@ -212,33 +285,29 @@ export default function HomeDashboardContainer({
       nextProjects[existingIndex] = project;
       return nextProjects;
     });
-  }, []);
+  }, [updateProjectsState]);
 
   const updateProjectState = useCallback((projectId: string, updates: Partial<Project>) => {
-    setProjects((previous) => previous.map((project) => (
+    updateProjectsState((previous) => previous.map((project) => (
       project.id === projectId ? { ...project, ...updates } : project
     )));
-  }, []);
+  }, [updateProjectsState]);
 
   const refreshQuickCreateState = useCallback(async () => {
     try {
-      const state = await getHomeQuickCreateState();
-      setQuickCreateDrafts(state.drafts);
-      setQuickCreateActiveCount(state.activeCount);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.homeQuickCreate() });
     } catch (refreshError) {
       console.error('Failed to refresh quick create state:', refreshError);
     }
-  }, []);
+  }, [queryClient]);
 
   const refreshActivity = useCallback(async () => {
     try {
-      const [sessions, drafts] = await Promise.all([listSessions(), listDrafts()]);
-      setAllSessions(sessions);
-      setAllDrafts(drafts);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.homeActivity() });
     } catch (refreshError) {
       console.error('Failed to refresh home activity:', refreshError);
     }
-  }, []);
+  }, [queryClient]);
 
   const resolveProjectEntry = useCallback((projectReference: string) => (
     resolveClientProjectReference(projects, projectReference)
@@ -263,50 +332,24 @@ export default function HomeDashboardContainer({
   }, [projects, resolveProjectEntry]);
 
   useEffect(() => {
-    let cancelled = false;
+    if (!homeBootstrapQuery.data) return;
+    setProjects(homeBootstrapQuery.data.projects);
+    setConfig(homeBootstrapQuery.data.config);
+    queryClient.setQueryData(['projects'], homeBootstrapQuery.data.projects);
+    setHomeProjectSort(readStoredHomeProjectSort() ?? homeBootstrapQuery.data.config.homeProjectSort);
+  }, [homeBootstrapQuery.data, queryClient]);
 
-    const loadDeferredData = async () => {
-      try {
-        await Promise.all([
-          refreshActivity(),
-          refreshQuickCreateState(),
-        ]);
-      } catch (loadError) {
-        console.error('Failed to load deferred home dashboard data:', loadError);
-      } finally {
-        if (!cancelled) {
-          setIsActivityLoaded(true);
-        }
-      }
-    };
+  useEffect(() => {
+    if (!homeActivityQuery.data) return;
+    setAllSessions(homeActivityQuery.data.sessions);
+    setAllDrafts(homeActivityQuery.data.drafts);
+  }, [homeActivityQuery.data]);
 
-    const loadBootstrap = async () => {
-      try {
-        const bootstrap = await getHomeDashboardBootstrap();
-        if (cancelled) return;
-        setProjects(bootstrap.projects);
-        setConfig(bootstrap.config);
-        setHomeProjectSort(readStoredHomeProjectSort() ?? bootstrap.config.homeProjectSort);
-      } catch (loadError) {
-        console.error('Failed to load home dashboard data:', loadError);
-        if (!cancelled) {
-          setError('Failed to load the home dashboard.');
-        }
-      } finally {
-        if (!cancelled) {
-          setIsBootstrapLoaded(true);
-        }
-      }
-
-      void loadDeferredData();
-    };
-
-    void loadBootstrap();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshActivity, refreshQuickCreateState]);
+  useEffect(() => {
+    if (!homeQuickCreateQuery.data) return;
+    setQuickCreateDrafts(homeQuickCreateQuery.data.drafts);
+    setQuickCreateActiveCount(homeQuickCreateQuery.data.activeCount);
+  }, [homeQuickCreateQuery.data]);
 
   useEffect(() => {
     const syncForegroundState = () => {
@@ -414,7 +457,7 @@ export default function HomeDashboardContainer({
 
       const currentConfig = config ?? await getConfig();
       if (!config) {
-        setConfig(currentConfig);
+        updateConfigState(currentConfig);
       }
 
       const nextRecentKey = resolvedProject.project?.id ?? resolvedProject.sessionReference;
@@ -430,7 +473,7 @@ export default function HomeDashboardContainer({
         ? currentConfig
         : await updateConfig({ recentProjects: nextRecentProjects });
 
-      setConfig(nextConfig);
+      updateConfigState(nextConfig);
 
       if (options?.navigateToNewInHome !== false) {
         const nextProjectQuery = buildNewSessionProjectQuery(resolvedProject.sessionReference);
@@ -447,7 +490,7 @@ export default function HomeDashboardContainer({
       setError('Failed to open project.');
       return false;
     }
-  }, [buildNewSessionProjectQuery, config, resolveProjectEntry, router]);
+  }, [buildNewSessionProjectQuery, config, resolveProjectEntry, router, updateConfigState]);
 
   const dismissRepoSettingsDialog = useCallback(() => {
     if (isSavingRepoSettings) return;
@@ -535,9 +578,8 @@ export default function HomeDashboardContainer({
         serviceStopCommand: serviceStopCommandToSave,
         alias: null,
       });
-      setConfig(nextConfig);
-      setProjectGitReposByPath((previous) => omitRecordKeys(previous, [projectForSettingsId]));
-      setDiscoveringHomeProjectGitRepos((previous) => omitRecordKeys(previous, [projectForSettingsId]));
+      updateConfigState(nextConfig);
+      queryClient.removeQueries({ queryKey: queryKeys.homeProjectGitRepos(projectForSettingsId) });
       setHomeProjectGitSelector((current) => (
         current?.projectKey === projectForSettingsId ? null : current
       ));
@@ -562,7 +604,9 @@ export default function HomeDashboardContainer({
     projectFolderPaths,
     projectForSettingsId,
     projectName,
+    queryClient,
     upsertProject,
+    updateConfigState,
   ]);
 
   const handleUploadProjectIcon = useCallback(async (iconPath: string) => {
@@ -746,7 +790,7 @@ export default function HomeDashboardContainer({
           ...(config?.recentProjects ?? []).filter((projectEntry) => projectEntry !== responsePayload.id),
         ],
       });
-      setConfig(nextConfig);
+      updateConfigState(nextConfig);
       upsertProject({
         id: responsePayload.id,
         name: responsePayload.name ?? payload.name,
@@ -764,7 +808,7 @@ export default function HomeDashboardContainer({
     } finally {
       setIsCreatingProject(false);
     }
-  }, [config?.recentProjects, upsertProject]);
+  }, [config?.recentProjects, updateConfigState, upsertProject]);
 
   const handleCloneRemoteRepo = useCallback(async () => {
     if (isCloningRemote) return;
@@ -820,9 +864,9 @@ export default function HomeDashboardContainer({
 
   const handleSetDefaultRoot = useCallback(async (path: string) => {
     const nextConfig = await updateConfig({ defaultRoot: path });
-    setConfig(nextConfig);
+    updateConfigState(nextConfig);
     setIsSelectingRoot(false);
-  }, []);
+  }, [updateConfigState]);
 
   const handleRemoveRecent = useCallback((event: ReactMouseEvent, projectReference: string) => {
     event.stopPropagation();
@@ -857,16 +901,12 @@ export default function HomeDashboardContainer({
         : [projectPendingDeleteId];
       const nextRecentProjects = config.recentProjects.filter((projectEntry) => !compatibilityKeys.includes(projectEntry));
       const nextConfig = await updateConfig({ recentProjects: nextRecentProjects });
-      setConfig(nextConfig);
-      const stateKeysToRemove = pendingProject
-        ? [pendingProject.id, ...pendingProject.folderPaths]
-        : [projectPendingDeleteId];
-      setProjectGitReposByPath((previous) => omitRecordKeys(previous, stateKeysToRemove));
-      setDiscoveringHomeProjectGitRepos((previous) => omitRecordKeys(previous, stateKeysToRemove));
+      updateConfigState(nextConfig);
+      queryClient.removeQueries({ queryKey: queryKeys.homeProjectGitRepos(projectPendingDeleteId) });
       setHomeProjectGitSelector((current) => (
         current?.projectKey === projectPendingDeleteId ? null : current
       ));
-      setProjects((previous) => previous.filter((project) => project.id !== projectPendingDeleteId));
+      updateProjectsState((previous) => previous.filter((project) => project.id !== projectPendingDeleteId));
       setProjectPendingDeleteId(null);
     } catch (deleteError) {
       console.error(deleteError);
@@ -881,6 +921,9 @@ export default function HomeDashboardContainer({
     getProjectByReference,
     isDeletingProject,
     projectPendingDeleteId,
+    queryClient,
+    updateConfigState,
+    updateProjectsState,
   ]);
 
   const discoverHomeProjectRepos = useCallback(async (
@@ -893,25 +936,28 @@ export default function HomeDashboardContainer({
       return [];
     }
 
-    const cached = projectGitReposByPath[projectKey];
-    if (cached && !options.force) {
-      return cached;
-    }
-
-    setDiscoveringHomeProjectGitRepos((previous) => ({ ...previous, [projectKey]: true }));
     try {
-      const discovery = await discoverProjectGitRepos(resolvedProject.project?.id ?? resolvedProject.primaryPath!);
-      const repos = toHomeProjectGitRepos(discovery.repos);
-      setProjectGitReposByPath((previous) => ({ ...previous, [projectKey]: repos }));
-      return repos;
+      const queryKey = queryKeys.homeProjectGitRepos(projectKey);
+      const queryFn = () => discoverProjectGitRepos(resolvedProject.project?.id ?? resolvedProject.primaryPath!);
+      const discovery = options.force
+        ? await queryClient.fetchQuery({
+            queryKey,
+            queryFn,
+            meta: { persist: true },
+            staleTime: 5 * 60_000,
+          })
+        : await queryClient.ensureQueryData({
+            queryKey,
+            queryFn,
+            meta: { persist: true },
+            staleTime: 5 * 60_000,
+          });
+      return toHomeProjectGitRepos(discovery.repos);
     } catch (discoverError) {
       console.error('Failed to discover project git repos:', discoverError);
-      setProjectGitReposByPath((previous) => ({ ...previous, [projectKey]: [] }));
       return [];
-    } finally {
-      setDiscoveringHomeProjectGitRepos((previous) => ({ ...previous, [projectKey]: false }));
     }
-  }, [projectGitReposByPath, resolveProjectEntry]);
+  }, [queryClient, resolveProjectEntry]);
 
   const handleOpenProjectGitWorkspace = useCallback(async (
     projectReference: string,
@@ -945,6 +991,40 @@ export default function HomeDashboardContainer({
   const resolvedRecentProjects = useMemo(() => (
     resolveClientRecentProjects(projects, recentProjects)
   ), [projects, recentProjects]);
+  const homeProjectGitRepoQueryInputs = useMemo(() => (
+    resolvedRecentProjects
+      .filter((projectEntry) => projectEntry.isOpenable && Boolean(projectEntry.primaryPath || projectEntry.project?.id))
+      .map((projectEntry) => ({
+        key: projectEntry.key,
+        target: projectEntry.project?.id ?? projectEntry.primaryPath!,
+      }))
+  ), [resolvedRecentProjects]);
+  const homeProjectGitRepoQueries = useQueries({
+    queries: homeProjectGitRepoQueryInputs.map((entry) => ({
+      queryKey: queryKeys.homeProjectGitRepos(entry.key),
+      queryFn: () => discoverProjectGitRepos(entry.target),
+      meta: { persist: true },
+      placeholderData: (previousData: DiscoverProjectGitReposResult | undefined) => previousData,
+      staleTime: 5 * 60_000,
+    })),
+  });
+  const projectGitReposByPath = useMemo<Record<string, HomeProjectGitRepo[]>>(() => {
+    const nextReposByPath: Record<string, HomeProjectGitRepo[]> = {};
+    homeProjectGitRepoQueryInputs.forEach((entry, index) => {
+      const discovery = homeProjectGitRepoQueries[index]?.data;
+      if (!discovery) return;
+      nextReposByPath[entry.key] = toHomeProjectGitRepos(discovery.repos);
+    });
+    return nextReposByPath;
+  }, [homeProjectGitRepoQueries, homeProjectGitRepoQueryInputs]);
+  const discoveringHomeProjectGitRepos = useMemo<Record<string, boolean>>(() => {
+    const nextLoadingState: Record<string, boolean> = {};
+    homeProjectGitRepoQueryInputs.forEach((entry, index) => {
+      const query = homeProjectGitRepoQueries[index];
+      nextLoadingState[entry.key] = Boolean(query && query.isFetching && !query.data);
+    });
+    return nextLoadingState;
+  }, [homeProjectGitRepoQueries, homeProjectGitRepoQueryInputs]);
 
   useEffect(() => {
     if (!isHomePageForegrounded || resolvedRecentProjects.length === 0) return;
@@ -1253,11 +1333,11 @@ export default function HomeDashboardContainer({
 
     try {
       const nextConfig = await updateConfig({ homeProjectSort: nextSort });
-      setConfig(nextConfig);
+      updateConfigState(nextConfig);
     } catch (sortError) {
       console.error('Failed to save home project sort:', sortError);
     }
-  }, []);
+  }, [updateConfigState]);
 
   const projectCardIconByKey = useMemo(() => {
     const nextIcons: Record<string, ProjectIconValue> = {};
@@ -1277,6 +1357,19 @@ export default function HomeDashboardContainer({
   const nextThemeModeLabel =
     nextThemeMode === 'auto' ? 'Auto' : (nextThemeMode === 'light' ? 'Bright' : 'Dark');
   const ThemeModeIcon = themeMode === 'auto' ? Monitor : (themeMode === 'light' ? Sun : Moon);
+  const isHomeRefreshing = bootstrapCacheState.isRefreshing
+    || activityCacheState.isRefreshing
+    || quickCreateCacheState.isRefreshing
+    || homeProjectGitRepoQueries.some((query) => Boolean(query.data) && query.isFetching);
+  const homeLastUpdatedAt = getLatestQueryUpdatedAt(
+    bootstrapCacheState,
+    activityCacheState,
+    quickCreateCacheState,
+  );
+  const displayedError = error
+    || (!bootstrapCacheState.hasCachedData && homeBootstrapQuery.error
+      ? 'Failed to load the home dashboard.'
+      : null);
 
   const handleRepoIconError = useCallback((repo: string) => {
     setBrokenRepoCardIcons((previous) => {
@@ -1385,9 +1478,11 @@ export default function HomeDashboardContainer({
   return (
     <>
       <HomeDashboard
-        error={error}
+        error={displayedError}
         isBootstrapLoaded={isBootstrapLoaded}
         isActivityLoaded={isActivityLoaded}
+        isRefreshing={isHomeRefreshing}
+        lastUpdatedAt={homeLastUpdatedAt}
         homeSearchQuery={homeSearchQuery}
         homeProjectSort={homeProjectSort}
         showLogout={showLogout}
