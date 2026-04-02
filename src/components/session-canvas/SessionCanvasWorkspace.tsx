@@ -54,6 +54,8 @@ import {
   fitSessionCanvasViewportToPanels,
   getDefaultSessionCanvasPanelId,
   getSessionCanvasTerminalRole,
+  SESSION_CANVAS_DEFAULT_GIT_PANEL_HEIGHT,
+  SESSION_CANVAS_DEFAULT_GIT_PANEL_WIDTH,
   SESSION_CANVAS_STARTUP_BOOTSTRAP_VERSION,
   SESSION_CANVAS_DEFAULT_EXPLORER_WIDTH,
   shouldBootstrapSessionCanvasTerminalPanel,
@@ -2147,8 +2149,8 @@ export function SessionCanvasWorkspace({
 
   const handleAddGitPanel = useCallback(() => {
     const panelSize = {
-      width: 1000,
-      height: 800,
+      width: SESSION_CANVAS_DEFAULT_GIT_PANEL_WIDTH,
+      height: SESSION_CANVAS_DEFAULT_GIT_PANEL_HEIGHT,
     };
     const position = getCenteredPanelPosition(panelSize.width, panelSize.height);
     addPanel({
@@ -2164,7 +2166,12 @@ export function SessionCanvasWorkspace({
         repoPath: bootstrap.metadata.activeRepoPath || bootstrap.metadata.gitRepos[0]?.sourceRepoPath || null,
       },
     });
-  }, [addPanel, bootstrap.metadata.activeRepoPath, bootstrap.metadata.gitRepos, getCenteredPanelPosition]);
+  }, [
+    addPanel,
+    bootstrap.metadata.activeRepoPath,
+    bootstrap.metadata.gitRepos,
+    getCenteredPanelPosition,
+  ]);
 
   const handleReturnHome = useCallback(() => {
     router.push('/');
