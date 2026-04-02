@@ -14,6 +14,8 @@
     "bin",
     "src/lib/cli-args.mjs",
     "src/lib/next-native-shims.mjs",
+    "src/lib/server-actions-key.mjs",
+    "src/lib/startup-port.mjs",
     ".next/BUILD_ID",
     ".next/server",
     ".next/static",
@@ -24,7 +26,7 @@
     "README.md"
   ],
   "scripts": {
-    "dev": "node ./scripts/run-next-with-server-actions-key.mjs dev --port 3200",
+    "dev": "node ./scripts/run-next-with-server-actions-key.mjs dev",
     "kill": "node ./scripts/kill-next-dev.mjs",
     "list": "sh -c 'lsof -nP -iTCP:3200-3299 -sTCP:LISTEN || echo \"No listening processes on 32xx ports\"'",
     "tailscale": "node ./scripts/tailscale.mjs",
@@ -33,7 +35,7 @@
     "postbuild": "node ./scripts/copy-next-shims.mjs",
     "build:webpack": "node ./scripts/run-next-with-server-actions-key.mjs build --webpack",
     "prepack": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\" && npm run build",
-    "start": "node ./scripts/run-next-with-server-actions-key.mjs start --port 3200",
+    "start": "node ./scripts/run-next-with-server-actions-key.mjs start",
     "tunnel": "node ./scripts/tunnel-restart.mjs 3200 -s palx",
     "tunnel:once": "nport 3200 -s palx",
     "lint": "eslint",

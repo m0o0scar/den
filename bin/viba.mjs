@@ -11,13 +11,13 @@ import { parseArgs } from "../src/lib/cli-args.mjs";
 import { syncNextNativeShims } from "../src/lib/next-native-shims.mjs";
 import { cleanupOrphanNextServers, startOrphanNextServerCleanupLoop } from "../src/lib/orphan-next-servers.mjs";
 import { withServerActionsEncryptionKey } from "../src/lib/server-actions-key.mjs";
+import { DEFAULT_PORT, resolveStartupPort } from "../src/lib/startup-port.mjs";
+export { resolveStartupPort } from "../src/lib/startup-port.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const APP_ROOT = path.resolve(__dirname, "..");
 const require = createRequire(import.meta.url);
-const { getFreePort } = require("gfport");
-const DEFAULT_PORT = 3200;
 const CODEX_SKILL_TARGET_AGENTS = ["codex", "cursor", "gemini-cli"];
 const CODEX_SKILL_DEFINITIONS = [
   {
@@ -418,29 +418,6 @@ Options:
   --dev              Run in development mode
   -h, --help         Show this help message
 `);
-}
-
-async function findAvailablePort(startPort) {
-  return getFreePort(startPort);
-}
-
-export async function resolveStartupPort(
-  { port: requestedPort, portExplicit = false, env = process.env },
-  { findAvailablePortImpl = findAvailablePort } = {},
-) {
-  const envPort = Number.parseInt(env.PORT || "", 10);
-  const preferredPort =
-    requestedPort ??
-    (Number.isInteger(envPort) && envPort > 0 && envPort <= 65535 ? envPort : DEFAULT_PORT);
-
-  if (portExplicit || env.PORT) {
-    return { port: preferredPort, preferredPort };
-  }
-
-  return {
-    port: await findAvailablePortImpl(preferredPort),
-    preferredPort,
-  };
 }
 
 function runNext(args, env = process.env) {
