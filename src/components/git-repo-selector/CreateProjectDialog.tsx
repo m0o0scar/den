@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FolderCog, Plus, Trash2, X } from 'lucide-react';
+import { Check, CloudDownload, FolderCog, Plus, Trash2, X } from 'lucide-react';
 import { checkDirectoryAccessible } from '@/app/actions/git';
 import FileBrowser from '@/components/FileBrowser';
 import { getBaseName } from '@/lib/path';
@@ -156,6 +156,8 @@ export function CreateProjectDialog({
   const folderCountLabel = useMemo(() => (
     selectedFolderPaths.length === 1 ? '1 associated folder' : `${selectedFolderPaths.length} associated folders`
   ), [selectedFolderPaths.length]);
+  const mobileActionButtonClass = 'w-10 min-w-10 justify-center gap-0 px-0 sm:w-auto sm:min-w-0 sm:gap-2 sm:px-4';
+  const mobilePrimaryActionButtonClass = 'w-10 min-w-10 justify-center gap-0 px-0 sm:w-auto sm:min-w-0 sm:gap-2 sm:px-4';
 
   if (!isOpen) return null;
 
@@ -204,25 +206,29 @@ export function CreateProjectDialog({
                 <div className="flex flex-wrap justify-end gap-2">
                   <button
                     type="button"
-                    className="app-ui-button"
+                    className={`app-ui-button ${mobileActionButtonClass}`}
                     onClick={() => setIsDefaultRootBrowserOpen(true)}
                     disabled={isSubmitting || isSettingDefaultRoot}
+                    aria-label="Set default root"
+                    title="Set Default Root"
                   >
                     {isSettingDefaultRoot ? (
                       <span className="loading loading-spinner loading-xs"></span>
                     ) : (
                       <FolderCog className="h-4 w-4" />
                     )}
-                    Set Default Root
+                    <span className="sr-only sm:not-sr-only">Set Default Root</span>
                   </button>
                   <button
                     type="button"
-                    className="app-ui-button"
+                    className={`app-ui-button ${mobileActionButtonClass}`}
                     onClick={() => setIsFolderBrowserOpen(true)}
                     disabled={isSubmitting || isSettingDefaultRoot}
+                    aria-label="Add folder"
+                    title="Add Folder"
                   >
                     <Plus className="h-4 w-4" />
-                    Add Folder
+                    <span className="sr-only sm:not-sr-only">Add Folder</span>
                   </button>
                 </div>
               </div>
@@ -332,26 +338,38 @@ export function CreateProjectDialog({
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-4 dark:border-[color:var(--app-dark-border-subtle)]">
               {onCloneRemote ? (
                 <button
-                  className="app-ui-button mr-auto"
+                  type="button"
+                  className={`app-ui-button mr-auto ${mobileActionButtonClass}`}
                   onClick={onCloneRemote}
                   disabled={isSubmitting}
+                  aria-label="Clone remote repo"
+                  title="Clone Remote Repo"
                 >
-                  Clone Remote Repo
+                  <CloudDownload className="h-4 w-4" />
+                  <span className="sr-only sm:not-sr-only">Clone Remote Repo</span>
                 </button>
               ) : null}
               <button
-                className="app-ui-button"
+                type="button"
+                className={`app-ui-button ${mobileActionButtonClass}`}
                 onClick={onClose}
                 disabled={isSubmitting}
+                aria-label="Cancel"
+                title="Cancel"
               >
-                Cancel
+                <X className="h-4 w-4" />
+                <span className="sr-only sm:not-sr-only">Cancel</span>
               </button>
               <button
-                className="btn btn-primary"
+                type="button"
+                className={`btn btn-primary ${mobilePrimaryActionButtonClass}`}
                 onClick={handleSubmit}
                 disabled={!canSubmit || isSubmitting}
+                aria-label="Create project"
+                title="Create Project"
               >
-                Create Project
+                <Check className="h-4 w-4" />
+                <span className="sr-only sm:not-sr-only">Create Project</span>
               </button>
             </div>
           </div>
