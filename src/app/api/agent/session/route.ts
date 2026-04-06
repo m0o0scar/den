@@ -62,7 +62,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'sessionId is required.' }, { status: 400 });
   }
 
-  const snapshotResult = await getSessionAgentSnapshot(sessionId);
+  const limitValue = request.nextUrl.searchParams.get('limit');
+  const beforeOrdinalValue = request.nextUrl.searchParams.get('beforeOrdinal');
+  const limit = limitValue && Number.isFinite(Number(limitValue)) && Number(limitValue) > 0
+    ? Math.floor(Number(limitValue))
+    : undefined;
+  const beforeOrdinal = beforeOrdinalValue && Number.isFinite(Number(beforeOrdinalValue)) && Number(beforeOrdinalValue) >= 0
+    ? Math.floor(Number(beforeOrdinalValue))
+    : undefined;
+
+  const snapshotResult = await getSessionAgentSnapshot(sessionId, {
+    ...(limit !== undefined ? { limit } : {}),
+    ...(beforeOrdinal !== undefined ? { beforeOrdinal } : {}),
+  });
   if (!snapshotResult.success || !snapshotResult.snapshot) {
     return NextResponse.json({
       error: snapshotResult.error || 'Session not found.',
@@ -94,7 +106,10 @@ export async function GET(request: NextRequest) {
       }));
       if (enrichedSnapshot.history.length === 0) {
         await replaceSessionAgentHistory(sessionId, history);
-        const refreshed = await getSessionAgentSnapshot(sessionId);
+        const refreshed = await getSessionAgentSnapshot(sessionId, {
+          ...(limit !== undefined ? { limit } : {}),
+          ...(beforeOrdinal !== undefined ? { beforeOrdinal } : {}),
+        });
         if (refreshed.success && refreshed.snapshot) {
           return NextResponse.json({
             ...refreshed.snapshot,
