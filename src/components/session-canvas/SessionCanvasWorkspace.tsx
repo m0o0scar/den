@@ -93,6 +93,7 @@ import type {
   SessionCanvasTerminalPanel,
 } from '@/lib/types';
 import { useAppDialog } from '@/hooks/use-app-dialog';
+import { usePageVisibility } from '@/hooks/usePageVisibility';
 import { useTerminalLink } from '@/hooks/useTerminalLink';
 import SessionFileBrowser from '../SessionFileBrowser';
 import { CanvasPanelFrame } from './CanvasPanelFrame';
@@ -143,6 +144,9 @@ type TerminalPanelProps = {
   sessionId: string;
   panel: SessionCanvasAgentTerminalPanel | SessionCanvasTerminalPanel;
   src: string;
+  isDocumentDarkMode: boolean;
+  isPageVisible: boolean;
+  forceMount: boolean;
   terminalPersistenceMode: 'tmux' | 'shell';
   terminalServiceReady: boolean;
   terminalError: string | null;
@@ -150,6 +154,7 @@ type TerminalPanelProps = {
   shouldBootstrap: boolean;
   onBootstrapComplete: () => void;
   onOpenPreview: (url: string, openPreview: boolean) => Promise<boolean>;
+  onRequireTerminalService: () => Promise<void>;
 };
 
 const SHELL_PROMPT_PATTERN = /(?:\$|%|#|>) $/;
@@ -533,6 +538,49 @@ function useDocumentDarkMode(): boolean {
   return isDarkMode;
 }
 
+function usePanelIframeVisibility(options: {
+  enabled: boolean;
+  forceMount?: boolean;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isIntersecting, setIsIntersecting] = useState(() => Boolean(options.enabled));
+
+  useEffect(() => {
+    if (!options.enabled) {
+      setIsIntersecting(false);
+      return;
+    }
+
+    if (options.forceMount) {
+      setIsIntersecting(true);
+      return;
+    }
+
+    const element = containerRef.current;
+    if (!element || typeof IntersectionObserver === 'undefined') {
+      setIsIntersecting(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      setIsIntersecting(entry?.isIntersecting ?? false);
+    }, {
+      threshold: 0.01,
+      rootMargin: '96px',
+    });
+
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [options.enabled, options.forceMount]);
+
+  return {
+    containerRef,
+    shouldMount: options.enabled && (options.forceMount || isIntersecting),
+  };
+}
+
 const MarkdownFileContent = memo(function MarkdownFileContent({ content }: { content: string }) {
   const { resolvedTheme } = useTheme();
   const text = normalizeMarkdownLists(content);
@@ -745,11 +793,19 @@ FileViewerPanel.displayName = 'FileViewerPanel';
 
 function PreviewPanel({
   panel,
+  isPageVisible,
+  forceMount = false,
   onPanelChange,
 }: {
   panel: SessionCanvasPreviewPanel;
+  isPageVisible: boolean;
+  forceMount?: boolean;
   onPanelChange: (updates: Partial<SessionCanvasPreviewPanel>) => void;
 }) {
+  const { containerRef, shouldMount } = usePanelIframeVisibility({
+    enabled: isPageVisible,
+    forceMount,
+  });
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [inputUrl, setInputUrl] = useState(panel.payload.url || '');
   const [iframeEpoch, setIframeEpoch] = useState(0);
@@ -811,7 +867,7 @@ function PreviewPanel({
   }, [inputUrl, loadPreview]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white app-dark-root">
+    <div ref={containerRef} className="flex h-full min-h-0 flex-col bg-white app-dark-root">
       <form
         className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-3 py-2 app-dark-surface-raised"
         onSubmit={handleSubmit}
@@ -852,7 +908,7 @@ function PreviewPanel({
         <div className="flex h-full items-center justify-center px-6 text-center text-sm text-red-600 dark:text-red-300">
           {error}
         </div>
-      ) : panel.payload.url ? (
+      ) : panel.payload.url && shouldMount ? (
         <iframe
           key={`${panel.payload.url}:${iframeEpoch}`}
           ref={iframeRef}
@@ -860,6 +916,10 @@ function PreviewPanel({
           className="h-full w-full border-0 bg-white app-dark-root"
           title={panel.title}
         />
+      ) : panel.payload.url ? (
+        <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500 dark:text-slate-400">
+          Preview is suspended while this panel is offscreen.
+        </div>
       ) : (
         <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500 dark:text-slate-400">
           Enter a preview URL to load a proxied iframe.
@@ -1006,6 +1066,9 @@ const TerminalPanel = forwardRef<SessionCanvasAgentInputHandle, TerminalPanelPro
   sessionId,
   panel,
   src,
+  isDocumentDarkMode,
+  isPageVisible,
+  forceMount,
   terminalPersistenceMode,
   terminalServiceReady,
   terminalError,
@@ -1013,8 +1076,12 @@ const TerminalPanel = forwardRef<SessionCanvasAgentInputHandle, TerminalPanelPro
   shouldBootstrap,
   onBootstrapComplete,
   onOpenPreview,
+  onRequireTerminalService,
 }, ref) {
-  const isDocumentDarkMode = useDocumentDarkMode();
+  const { containerRef, shouldMount } = usePanelIframeVisibility({
+    enabled: isPageVisible,
+    forceMount,
+  });
   const { attachTerminalLinkHandler } = useTerminalLink({ onLoadPreview: onOpenPreview });
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const bootstrapStartedRef = useRef(false);
@@ -1031,6 +1098,13 @@ const TerminalPanel = forwardRef<SessionCanvasAgentInputHandle, TerminalPanelPro
   const terminalTheme = useMemo(() => {
     return isDocumentDarkMode ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT;
   }, [isDocumentDarkMode]);
+
+  useEffect(() => {
+    if (!shouldMount || terminalServiceReady || terminalError) {
+      return;
+    }
+    void onRequireTerminalService();
+  }, [onRequireTerminalService, shouldMount, terminalError, terminalServiceReady]);
 
   const applyTerminalTheme = useCallback(function applyTerminalTheme(attempts = 0) {
     const applied = applyThemeToTerminalWindow(
@@ -1138,10 +1212,33 @@ const TerminalPanel = forwardRef<SessionCanvasAgentInputHandle, TerminalPanelPro
     touchScrollCleanupRef.current = null;
   }, []);
 
+  useEffect(() => {
+    if (shouldMount) {
+      return;
+    }
+
+    if (themeApplyTimerRef.current !== null) {
+      window.clearTimeout(themeApplyTimerRef.current);
+      themeApplyTimerRef.current = null;
+    }
+    if (linkHandlerTimerRef.current !== null) {
+      window.clearTimeout(linkHandlerTimerRef.current);
+      linkHandlerTimerRef.current = null;
+    }
+    if (touchScrollTimerRef.current !== null) {
+      window.clearTimeout(touchScrollTimerRef.current);
+      touchScrollTimerRef.current = null;
+    }
+    linkHandlerCleanupRef.current?.();
+    linkHandlerCleanupRef.current = null;
+    touchScrollCleanupRef.current?.();
+    touchScrollCleanupRef.current = null;
+  }, [shouldMount]);
+
   useImperativeHandle(ref, () => ({
     insertText(text: string) {
       const value = text ?? '';
-      if (!value || terminalError || !terminalServiceReady || !terminalReady) {
+      if (!value || !shouldMount || terminalError || !terminalServiceReady || !terminalReady) {
         return false;
       }
 
@@ -1157,14 +1254,14 @@ const TerminalPanel = forwardRef<SessionCanvasAgentInputHandle, TerminalPanelPro
       }
       return inserted;
     },
-  }), [terminalError, terminalReady, terminalServiceReady]);
+  }), [shouldMount, terminalError, terminalReady, terminalServiceReady]);
 
   useEffect(() => {
-    if (!iframeRef.current) {
+    if (!shouldMount || !iframeRef.current) {
       return;
     }
     applyTerminalTheme();
-  }, [applyTerminalTheme, iframeEpoch, terminalReady, terminalTheme]);
+  }, [applyTerminalTheme, iframeEpoch, shouldMount, terminalReady, terminalTheme]);
 
   useEffect(() => {
     if (!terminalServiceReady) {
@@ -1250,9 +1347,17 @@ const TerminalPanel = forwardRef<SessionCanvasAgentInputHandle, TerminalPanelPro
     window.setTimeout(tick, 350);
   }, [applyTerminalTheme, attachTerminalLinks, attachTerminalTouchScroll, bootstrapCommand, onBootstrapComplete, shouldBootstrap, terminalReady, terminalServiceReady]);
 
+  if (!shouldMount) {
+    return (
+      <div ref={containerRef} className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500 dark:text-slate-400">
+        {isPageVisible ? 'Terminal is suspended while this panel is offscreen.' : 'Terminal is suspended while the page is hidden.'}
+      </div>
+    );
+  }
+
   if (terminalError) {
     return (
-      <div className="flex h-full items-center justify-center px-6 text-center text-sm text-red-600 dark:text-red-300">
+      <div ref={containerRef} className="flex h-full items-center justify-center px-6 text-center text-sm text-red-600 dark:text-red-300">
         {terminalError}
       </div>
     );
@@ -1260,7 +1365,7 @@ const TerminalPanel = forwardRef<SessionCanvasAgentInputHandle, TerminalPanelPro
 
   if (!terminalServiceReady) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+      <div ref={containerRef} className="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400">
         Starting terminal service...
       </div>
     );
@@ -1268,23 +1373,25 @@ const TerminalPanel = forwardRef<SessionCanvasAgentInputHandle, TerminalPanelPro
 
   if (!terminalReady) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+      <div ref={containerRef} className="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400">
         Preparing terminal...
       </div>
     );
   }
 
   return (
-    <iframe
-      key={`${panel.id}:${iframeEpoch}`}
-      ref={iframeRef}
-      src={src}
-      title={panel.title}
-      className="h-full w-full border-0 bg-white"
-      style={isDocumentDarkMode ? { backgroundColor: 'var(--app-dark-panel)' } : undefined}
-      allow="clipboard-read; clipboard-write"
-      onLoad={handleLoad}
-    />
+    <div ref={containerRef} className="h-full w-full">
+      <iframe
+        key={`${panel.id}:${iframeEpoch}`}
+        ref={iframeRef}
+        src={src}
+        title={panel.title}
+        className="h-full w-full border-0 bg-white"
+        style={isDocumentDarkMode ? { backgroundColor: 'var(--app-dark-panel)' } : undefined}
+        allow="clipboard-read; clipboard-write"
+        onLoad={handleLoad}
+      />
+    </div>
   );
 });
 
@@ -1292,6 +1399,8 @@ export function SessionCanvasWorkspace({
   sessionId,
   bootstrap,
 }: SessionCanvasWorkspaceProps) {
+  const { isPageVisible } = usePageVisibility();
+  const isDocumentDarkMode = useDocumentDarkMode();
   const router = useRouter();
   const { confirm: confirmDialog, dialog } = useAppDialog();
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -1323,6 +1432,7 @@ export function SessionCanvasWorkspace({
   const [commandPaletteError, setCommandPaletteError] = useState<string | null>(null);
   const [commandPaletteHighlightedIndex, setCommandPaletteHighlightedIndex] = useState(0);
   const commandPaletteRequestIdRef = useRef(0);
+  const terminalServiceStartingRef = useRef<Promise<void> | null>(null);
   const didHydrateLayoutRef = useRef(false);
   const didFitInitialLayoutRef = useRef(false);
 
@@ -1539,30 +1649,34 @@ export function SessionCanvasWorkspace({
     });
   }, [bootstrap.restoredFromSavedLayout]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const ensureTerminalService = useCallback(async () => {
+    if (terminalServiceReady) {
+      return;
+    }
+    if (terminalServiceStartingRef.current) {
+      await terminalServiceStartingRef.current;
+      return;
+    }
 
-    void (async () => {
+    terminalServiceStartingRef.current = (async () => {
       try {
         const result = await startTtydProcess();
-        if (cancelled) return;
         if (!result.success) {
           throw new Error(result.error || 'Failed to start terminal service');
         }
         setTerminalServiceReady(true);
         setTerminalServiceError(null);
       } catch (error) {
-        if (cancelled) return;
         console.error('Failed to start terminal service:', error);
         setTerminalServiceReady(false);
         setTerminalServiceError(error instanceof Error ? error.message : 'Failed to start terminal service');
+      } finally {
+        terminalServiceStartingRef.current = null;
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    await terminalServiceStartingRef.current;
+  }, [terminalServiceReady]);
 
   useEffect(() => {
     if (!didHydrateLayoutRef.current) {
@@ -2325,6 +2439,7 @@ export function SessionCanvasWorkspace({
 
     if (panel.type === 'terminal') {
       const terminalPanel = panel as SessionCanvasTerminalPanel;
+      const forceMount = panel.state?.maximized === true;
       const src = buildSessionCanvasTerminalSrc({
         sessionName: sessionId,
         panel: terminalPanel,
@@ -2354,6 +2469,9 @@ export function SessionCanvasWorkspace({
           sessionId={sessionId}
           panel={panel}
           src={src}
+          isDocumentDarkMode={isDocumentDarkMode}
+          isPageVisible={isPageVisible}
+          forceMount={forceMount}
           terminalPersistenceMode={bootstrap.terminalPersistenceMode}
           terminalServiceReady={terminalServiceReady}
           terminalError={terminalServiceError}
@@ -2365,6 +2483,7 @@ export function SessionCanvasWorkspace({
               : () => {}
           }
           onOpenPreview={handleOpenPreviewUrl}
+          onRequireTerminalService={ensureTerminalService}
         />
       );
     }
@@ -2382,6 +2501,8 @@ export function SessionCanvasWorkspace({
       return (
         <PreviewPanel
           panel={panel}
+          isPageVisible={isPageVisible}
+          forceMount={panel.state?.maximized === true}
           onPanelChange={(updates) => updatePanel(panel.id, updates)}
         />
       );
@@ -2413,7 +2534,10 @@ export function SessionCanvasWorkspace({
     markStartupBootstrapComplete,
     registerAgentInputHandle,
     handleOpenPreviewUrl,
+    ensureTerminalService,
     sessionId,
+    isDocumentDarkMode,
+    isPageVisible,
     terminalServiceError,
     terminalServiceReady,
     updatePanel,

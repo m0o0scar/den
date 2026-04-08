@@ -46,6 +46,7 @@ import {
   replaceActiveMention,
 } from '@/lib/task-description-mentions';
 import { uploadAttachments } from '@/lib/upload-attachments';
+import { usePageVisibility } from '@/hooks/usePageVisibility';
 import type {
   AgentProvider,
   ChatStreamEvent,
@@ -67,6 +68,10 @@ type SessionSnapshotResponse = {
   };
   runtime: SessionAgentRuntimeState;
   history: SessionAgentHistoryItem[];
+  historyPage?: {
+    hasOlder: boolean;
+    oldestLoadedOrdinal: number | null;
+  };
 };
 
 type AgentSocketPayload = {
@@ -132,6 +137,8 @@ type PendingMessage = {
 };
 
 const COMPOSER_MAX_HEIGHT = 112;
+const INITIAL_HISTORY_PAGE_SIZE = 300;
+const OLDER_HISTORY_PAGE_SIZE = 200;
 const ACTIVE_TURN_REFRESH_INTERVAL_MS = 15_000;
 const SOCKET_IDLE_REFRESH_THRESHOLD_MS = 90_000;
 const POSSIBLE_STALE_THRESHOLD_MS = 5 * 60_000;
@@ -744,6 +751,73 @@ function MeasuredHistoryRow({ item, expandedItems, onToggleExpanded, planFallbac
   );
 }
 
+const MemoizedMeasuredHistoryRow = React.memo(MeasuredHistoryRow, (previous, next) => {
+  if (previous.item.id !== next.item.id) {
+    return false;
+  }
+
+  const previousExpanded = Boolean(previous.expandedItems[previous.item.id]);
+  const nextExpanded = Boolean(next.expandedItems[next.item.id]);
+  if (previousExpanded !== nextExpanded) {
+    return false;
+  }
+
+  return previous.item.updatedAt === next.item.updatedAt
+    && previous.item.itemStatus === next.item.itemStatus
+    && previous.planFallbackStepsById[previous.item.id] === next.planFallbackStepsById[next.item.id];
+});
+
+type HistoryPageState = {
+  hasOlder: boolean;
+  oldestLoadedOrdinal: number | null;
+};
+
+function buildHistoryPageState(payload?: SessionSnapshotResponse['historyPage']): HistoryPageState {
+  return {
+    hasOlder: payload?.hasOlder ?? false,
+    oldestLoadedOrdinal: payload?.oldestLoadedOrdinal ?? null,
+  };
+}
+
+function sortHistoryItemsForDisplay(items: SessionAgentHistoryItem[]): SessionAgentHistoryItem[] {
+  return [...items].sort((left, right) => (
+    left.ordinal - right.ordinal
+    || left.createdAt.localeCompare(right.createdAt)
+    || left.id.localeCompare(right.id)
+  ));
+}
+
+function mergeHistoryWindow(
+  current: SessionAgentHistoryItem[],
+  incoming: SessionAgentHistoryItem[],
+): SessionAgentHistoryItem[] {
+  if (current.length === 0) {
+    return incoming;
+  }
+  if (incoming.length === 0) {
+    return current;
+  }
+
+  const oldestIncomingOrdinal = incoming[0]?.ordinal ?? 0;
+  const preservedOlder = current.filter((item) => item.ordinal < oldestIncomingOrdinal);
+  return sortHistoryItemsForDisplay([...preservedOlder, ...incoming]);
+}
+
+function prependOlderHistory(
+  current: SessionAgentHistoryItem[],
+  older: SessionAgentHistoryItem[],
+): SessionAgentHistoryItem[] {
+  if (older.length === 0) {
+    return current;
+  }
+
+  const merged = new Map<string, SessionAgentHistoryItem>();
+  for (const item of [...older, ...current]) {
+    merged.set(item.id, item);
+  }
+  return sortHistoryItemsForDisplay([...merged.values()]);
+}
+
 function buildOptimisticHistoryItem(
   message: OptimisticUserMessage,
   sessionName: string,
@@ -787,9 +861,12 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
   },
   ref,
 ) {
+  const { isPageVisible, resumeVersion } = usePageVisibility();
   const [runtime, setRuntime] = useState<SessionAgentRuntimeState | null>(initialSnapshot?.runtime ?? null);
   const [history, setHistory] = useState<SessionAgentHistoryItem[]>(initialSnapshot?.history ?? []);
+  const [historyPage, setHistoryPage] = useState<HistoryPageState>(() => buildHistoryPageState(initialSnapshot?.historyPage));
   const [loading, setLoading] = useState(() => !initialSnapshot && !(autoStartMessage?.trim()));
+  const [loadingOlderHistory, setLoadingOlderHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [composerValue, setComposerValue] = useState('');
   const [pendingAttachmentPaths, setPendingAttachmentPaths] = useState<string[]>([]);
@@ -822,7 +899,31 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
   const latestAgentProviderRef = useRef<AgentProvider | null>(null);
   const autoStartRequestKeyRef = useRef<string | null>(null);
 
+  const fetchSnapshot = useCallback(async (options?: { limit?: number; beforeOrdinal?: number }) => {
+    const params = new URLSearchParams({ sessionId });
+    if (options?.limit !== undefined) {
+      params.set('limit', String(options.limit));
+    }
+    if (options?.beforeOrdinal !== undefined) {
+      params.set('beforeOrdinal', String(options.beforeOrdinal));
+    }
+
+    const response = await fetch(`/api/agent/session?${params.toString()}`, {
+      cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => null) as SessionSnapshotResponse | { error?: string } | null;
+    if (!response.ok || !payload || !('runtime' in payload) || !('history' in payload)) {
+      throw new Error((payload && 'error' in payload && typeof payload.error === 'string')
+        ? payload.error
+        : 'Failed to load agent session.');
+    }
+    return payload;
+  }, [sessionId]);
+
   const scheduleRefresh = useCallback((delay = 120) => {
+    if (!isPageVisible) {
+      return;
+    }
     if (refreshTimerRef.current !== null) {
       return;
     }
@@ -831,55 +932,62 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
       refreshTimerRef.current = null;
       void (async () => {
         try {
-          const response = await fetch(`/api/agent/session?sessionId=${encodeURIComponent(sessionId)}`, {
-            cache: 'no-store',
-          });
-          const payload = await response.json().catch(() => null) as SessionSnapshotResponse | { error?: string } | null;
-          if (!response.ok || !payload || !('runtime' in payload) || !('history' in payload)) {
-            throw new Error((payload && 'error' in payload && typeof payload.error === 'string')
-              ? payload.error
-              : 'Failed to refresh agent session.');
-          }
-
+          const payload = await fetchSnapshot({ limit: INITIAL_HISTORY_PAGE_SIZE });
           setRuntime(payload.runtime);
-          setHistory(payload.history);
+          setHistory((current) => mergeHistoryWindow(current, payload.history));
+          setHistoryPage(buildHistoryPageState(payload.historyPage));
           setError(null);
         } catch (refreshError) {
           setError(refreshError instanceof Error ? refreshError.message : 'Failed to refresh agent session.');
         }
       })();
     }, delay);
-  }, [sessionId]);
+  }, [fetchSnapshot, isPageVisible]);
 
   const loadSnapshot = useCallback(async (options?: { showLoading?: boolean }) => {
     if (options?.showLoading ?? true) {
       setLoading(true);
     }
     try {
-      const response = await fetch(`/api/agent/session?sessionId=${encodeURIComponent(sessionId)}`, {
-        cache: 'no-store',
-      });
-      const payload = await response.json().catch(() => null) as SessionSnapshotResponse | { error?: string } | null;
-      if (!response.ok || !payload || !('runtime' in payload) || !('history' in payload)) {
-        throw new Error((payload && 'error' in payload && typeof payload.error === 'string')
-          ? payload.error
-          : 'Failed to load agent session.');
-      }
-
+      const payload = await fetchSnapshot({ limit: INITIAL_HISTORY_PAGE_SIZE });
       setRuntime(payload.runtime);
-      setHistory(payload.history);
+      setHistory((current) => mergeHistoryWindow(current, payload.history));
+      setHistoryPage(buildHistoryPageState(payload.historyPage));
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load agent session.');
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [fetchSnapshot]);
+
+  const loadOlderHistory = useCallback(async () => {
+    if (loadingOlderHistory || !historyPage.hasOlder || historyPage.oldestLoadedOrdinal == null) {
+      return;
+    }
+
+    setLoadingOlderHistory(true);
+    try {
+      const payload = await fetchSnapshot({
+        limit: OLDER_HISTORY_PAGE_SIZE,
+        beforeOrdinal: historyPage.oldestLoadedOrdinal,
+      });
+      setHistory((current) => prependOlderHistory(current, payload.history));
+      setHistoryPage(buildHistoryPageState(payload.historyPage));
+      setError(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load older history.');
+    } finally {
+      setLoadingOlderHistory(false);
+    }
+  }, [fetchSnapshot, historyPage.hasOlder, historyPage.oldestLoadedOrdinal, loadingOlderHistory]);
 
   useEffect(() => {
     setRuntime(initialSnapshot?.runtime ?? null);
     setHistory(initialSnapshot?.history ?? []);
+    setHistoryPage(buildHistoryPageState(initialSnapshot?.historyPage));
     setLoading(!initialSnapshot && !(autoStartMessage?.trim()));
+    setLoadingOlderHistory(false);
     setError(null);
     setPendingMessages([]);
     setOptimisticMessages([]);
@@ -888,8 +996,11 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
   }, [autoStartMessage, initialSnapshot, sessionId]);
 
   useEffect(() => {
+    if (!isPageVisible) {
+      return;
+    }
     void loadSnapshot({ showLoading: !initialSnapshot && !(autoStartMessage?.trim()) });
-  }, [autoStartMessage, initialSnapshot, loadSnapshot]);
+  }, [autoStartMessage, initialSnapshot, isPageVisible, loadSnapshot]);
 
   useEffect(() => {
     const nextSelection = pendingSelectionRef.current;
@@ -921,6 +1032,11 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
     let reconnectTimer: number | null = null;
     let reconnectAttempt = 0;
     let isConnecting = false;
+
+    if (!isPageVisible) {
+      setSocketConnected(false);
+      return () => {};
+    }
 
     const clearReconnectTimer = () => {
       if (reconnectTimer === null) return;
@@ -1046,7 +1162,14 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
       setSocketConnected(false);
       closeSocket();
     };
-  }, [scheduleRefresh, sessionId]);
+  }, [isPageVisible, scheduleRefresh, sessionId]);
+
+  useEffect(() => {
+    if (!isPageVisible || resumeVersion === 0) {
+      return;
+    }
+    void loadSnapshot({ showLoading: false });
+  }, [isPageVisible, loadSnapshot, resumeVersion]);
 
   useEffect(() => {
     return () => {
@@ -1056,6 +1179,14 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (isPageVisible || refreshTimerRef.current === null) {
+      return;
+    }
+    window.clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = null;
+  }, [isPageVisible]);
 
   useEffect(() => {
     setWorkspaceEntriesCache([]);
@@ -1097,7 +1228,7 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
   }, [reasoningEffortOptions, runtime?.reasoningEffort]);
 
   useEffect(() => {
-    if (!isTurnActive) {
+    if (!isPageVisible || !isTurnActive || socketConnected) {
       setPossibleStale(false);
       return;
     }
@@ -1109,10 +1240,10 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
     return () => {
       window.clearInterval(interval);
     };
-  }, [isTurnActive, scheduleRefresh]);
+  }, [isPageVisible, isTurnActive, scheduleRefresh, socketConnected]);
 
   useEffect(() => {
-    if (!isTurnActive) {
+    if (!isPageVisible || !isTurnActive || socketConnected) {
       return;
     }
 
@@ -1135,7 +1266,7 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
     return () => {
       window.clearInterval(interval);
     };
-  }, [isTurnActive, lastSocketMessageAt, runtime?.lastActivityAt, scheduleRefresh]);
+  }, [isPageVisible, isTurnActive, lastSocketMessageAt, runtime?.lastActivityAt, scheduleRefresh, socketConnected]);
 
   const canSend = !loading && !isSending && (composerValue.trim().length > 0 || pendingAttachmentPaths.length > 0);
   const optimisticHistory = useMemo(
@@ -1849,8 +1980,21 @@ const AgentSessionPane = forwardRef<AgentSessionPaneHandle, AgentSessionPaneProp
             // expandable cards, and absolute-position virtualization led to stale
             // height placement that could overlap adjacent rows.
             <div className="space-y-3">
+              {historyPage.hasOlder ? (
+                <div className="flex justify-center pb-1">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                    onClick={() => { void loadOlderHistory(); }}
+                    disabled={loadingOlderHistory}
+                  >
+                    {loadingOlderHistory ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                    {loadingOlderHistory ? 'Loading older activity...' : 'Load older activity'}
+                  </button>
+                </div>
+              ) : null}
               {displayHistory.map((item) => (
-                <MeasuredHistoryRow
+                <MemoizedMeasuredHistoryRow
                   key={item.id}
                   item={item}
                   expandedItems={expandedHistoryItems}

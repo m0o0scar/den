@@ -18,8 +18,6 @@ import {
   normalizeNullableProviderReasoningEffort,
   normalizeProviderReasoningEffort,
 } from '../../lib/agent/reasoning.ts';
-import { buildPlanText, normalizePlanSteps, parsePlanStepsFromText } from '../../lib/agent/plan.ts';
-import { sortSessionHistoryForTimeline } from '../../lib/agent/history-order.ts';
 import { publishSessionListUpdated } from '../../lib/sessionNotificationServer.ts';
 import { runInBackground } from '../../lib/background-task.ts';
 import {
@@ -47,6 +45,17 @@ import {
   normalizeProjectFolderPath,
 } from '../../lib/project-folders.ts';
 import {
+  clearSessionHistory,
+  deleteSessionState as deletePersistedSessionState,
+  flushSessionState,
+  listSessionHistory,
+  readSessionHistoryPage,
+  readSessionRuntime,
+  replaceSessionHistoryEntries,
+  updateSessionRuntime,
+  upsertSessionHistoryEntries,
+} from '../../lib/agent/store.ts';
+import {
   repairMissingSessionProjectIds,
   resolveProjectActivityFilter,
 } from '../../lib/project-activity-server.ts';
@@ -56,7 +65,6 @@ import {
 } from '../../lib/project-session-context.ts';
 import type {
   AgentProvider,
-  HistoryEntry,
   ReasoningEffort,
   SessionAgentHistoryInput,
   SessionAgentHistoryItem,
@@ -117,12 +125,17 @@ export type SessionAgentSnapshot = {
   metadata: SessionMetadata;
   runtime: SessionAgentRuntimeState;
   history: SessionAgentHistoryItem[];
+  historyPage: {
+    hasOlder: boolean;
+    oldestLoadedOrdinal: number | null;
+  };
 };
 
 export type SessionAgentHistoryQuery = {
   threadId?: string;
   turnId?: string;
   limit?: number;
+  beforeOrdinal?: number;
 };
 
 export type SessionCreateGitContextInput = {
@@ -238,19 +251,6 @@ type SessionWorkspacePreparationRow = {
   expires_at: string;
   consumed_at: string | null;
   released_at: string | null;
-};
-
-type SessionAgentHistoryRow = {
-  session_name: string;
-  item_id: string;
-  thread_id: string | null;
-  turn_id: string | null;
-  ordinal: number | null;
-  kind: string;
-  status: string | null;
-  payload_json: string;
-  created_at: string;
-  updated_at: string;
 };
 
 function toSessionGitRepoRows(metadata: {
@@ -393,32 +393,6 @@ function toSessionWorkspacePreparationRow(record: {
   };
 }
 
-function toSessionAgentHistoryRow(record: {
-  sessionName: string;
-  itemId: string;
-  threadId?: string | null;
-  turnId?: string | null;
-  ordinal: number;
-  kind: string;
-  status?: string | null;
-  payloadJson: string;
-  createdAt: string;
-  updatedAt: string;
-}): SessionAgentHistoryRow {
-  return {
-    session_name: record.sessionName,
-    item_id: record.itemId,
-    thread_id: record.threadId ?? null,
-    turn_id: record.turnId ?? null,
-    ordinal: record.ordinal,
-    kind: record.kind,
-    status: record.status ?? null,
-    payload_json: record.payloadJson,
-    created_at: record.createdAt,
-    updated_at: record.updatedAt,
-  };
-}
-
 function parseStringArray(value: string | null): string[] | undefined {
   if (!value) return undefined;
   try {
@@ -539,47 +513,26 @@ function toSessionAgentRuntimeState(metadata: SessionMetadata): SessionAgentRunt
   };
 }
 
-function toSessionAgentHistoryItem(row: SessionAgentHistoryRow): SessionAgentHistoryItem | null {
-  try {
-    const parsed = JSON.parse(row.payload_json) as unknown;
-    if (!parsed || typeof parsed !== 'object') return null;
-    const payload = parsed as Record<string, unknown>;
-    if (payload.kind !== row.kind) return null;
-    if (typeof payload.id !== 'string' || !payload.id.trim()) {
-      payload.id = row.item_id;
-    }
-
-    if (payload.kind === 'plan') {
-      const text = typeof payload.text === 'string' ? payload.text : '';
-      const steps = normalizePlanSteps(payload.steps);
-      return {
-        kind: 'plan',
-        id: typeof payload.id === 'string' ? payload.id : row.item_id,
-        text: text || buildPlanText(steps),
-        steps: steps.length > 0 ? steps : parsePlanStepsFromText(text),
-        sessionName: row.session_name,
-        threadId: normalizeNullableText(row.thread_id),
-        turnId: normalizeNullableText(row.turn_id),
-        ordinal: row.ordinal ?? 0,
-        itemStatus: normalizeNullableText(row.status),
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      };
-    }
-
-    return {
-      ...(payload as HistoryEntry),
-      sessionName: row.session_name,
-      threadId: normalizeNullableText(row.thread_id),
-      turnId: normalizeNullableText(row.turn_id),
-      ordinal: row.ordinal ?? 0,
-      itemStatus: normalizeNullableText(row.status),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
-  } catch {
-    return null;
+function mergeSessionMetadataWithRuntime(
+  metadata: SessionMetadata,
+  runtime: SessionAgentRuntimeState | null,
+): SessionMetadata {
+  if (!runtime) {
+    return metadata;
   }
+
+  return {
+    ...metadata,
+    agent: runtime.agentProvider,
+    agentProvider: runtime.agentProvider,
+    model: runtime.model,
+    reasoningEffort: runtime.reasoningEffort ?? undefined,
+    threadId: runtime.threadId ?? undefined,
+    activeTurnId: runtime.activeTurnId ?? undefined,
+    runState: runtime.runState ?? undefined,
+    lastError: runtime.lastError ?? undefined,
+    lastActivityAt: runtime.lastActivityAt ?? undefined,
+  };
 }
 
 function normalizePath(value: string): string {
@@ -1707,6 +1660,7 @@ export async function saveSessionMetadata(metadata: SessionMetadata): Promise<vo
   );
 
   updateLocalState((state) => {
+    const existing = state.sessions[metadata.sessionName];
     state.sessions[metadata.sessionName] = {
       sessionName: metadata.sessionName,
       projectId: metadata.projectId ?? null,
@@ -1722,11 +1676,11 @@ export async function saveSessionMetadata(metadata: SessionMetadata): Promise<vo
       agent: agentProvider,
       model: metadata.model,
       reasoningEffort,
-      threadId: normalizeNullableText(metadata.threadId),
-      activeTurnId: normalizeNullableText(metadata.activeTurnId),
-      runState: normalizeNullableText(metadata.runState),
-      lastError: normalizeNullableText(metadata.lastError),
-      lastActivityAt: normalizeNullableText(metadata.lastActivityAt),
+      threadId: existing?.threadId ?? null,
+      activeTurnId: existing?.activeTurnId ?? null,
+      runState: existing?.runState ?? null,
+      lastError: existing?.lastError ?? null,
+      lastActivityAt: existing?.lastActivityAt ?? null,
       title: metadata.title ?? null,
       devServerScript: metadata.devServerScript ?? null,
       initialized: metadata.initialized ?? null,
@@ -1739,6 +1693,20 @@ export async function saveSessionMetadata(metadata: SessionMetadata): Promise<vo
         baseBranch: gitRepo.baseBranch ?? null,
       })),
     };
+  });
+
+  // Keep the hot runtime authoritative for agent selection and live state
+  // without writing volatile runtime fields back into the cold summary store.
+  readSessionRuntime(metadata.sessionName);
+  updateSessionRuntime(metadata.sessionName, {
+    agentProvider: agentProvider as AgentProvider,
+    model: metadata.model,
+    reasoningEffort,
+    ...(metadata.threadId !== undefined ? { threadId: metadata.threadId ?? null } : {}),
+    ...(metadata.activeTurnId !== undefined ? { activeTurnId: metadata.activeTurnId ?? null } : {}),
+    ...(metadata.runState !== undefined ? { runState: metadata.runState ?? null } : {}),
+    ...(metadata.lastError !== undefined ? { lastError: metadata.lastError ?? null } : {}),
+    ...(metadata.lastActivityAt !== undefined ? { lastActivityAt: metadata.lastActivityAt ?? null } : {}),
   });
 }
 
@@ -1937,7 +1905,10 @@ export async function getSessionMetadata(sessionName: string): Promise<SessionMe
   try {
     const record = readLocalState().sessions[sessionName];
     if (!record) return null;
-    return sessionRecordToMetadata(record);
+    return mergeSessionMetadataWithRuntime(
+      sessionRecordToMetadata(record),
+      readSessionRuntime(sessionName),
+    );
   } catch {
     return null;
   }
@@ -1960,7 +1931,10 @@ export async function listSessions(projectReference?: string): Promise<SessionMe
       })
       .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
 
-    return records.map((record) => sessionRecordToMetadata(record));
+    return records.map((record) => mergeSessionMetadataWithRuntime(
+      sessionRecordToMetadata(record),
+      readSessionRuntime(record.sessionName),
+    ));
   } catch (error) {
     console.error('Failed to list sessions:', error);
     return [];
@@ -1968,8 +1942,7 @@ export async function listSessions(projectReference?: string): Promise<SessionMe
 }
 
 export async function getSessionAgentRuntimeState(sessionName: string): Promise<SessionAgentRuntimeState | null> {
-  const metadata = await getSessionMetadata(sessionName);
-  return metadata ? toSessionAgentRuntimeState(metadata) : null;
+  return readSessionRuntime(sessionName);
 }
 
 export async function updateSessionAgentRuntimeState(
@@ -1977,36 +1950,11 @@ export async function updateSessionAgentRuntimeState(
   updates: SessionAgentRuntimeUpdate,
 ): Promise<{ success: boolean; runtime?: SessionAgentRuntimeState; error?: string }> {
   try {
-    const metadata = await getSessionMetadata(sessionName);
-    if (!metadata) {
+    const runtime = updateSessionRuntime(sessionName, updates);
+    if (!runtime) {
       return { success: false, error: 'Session metadata not found' };
     }
-
-    const nextAgentProvider = normalizeOptionalText(updates.agentProvider) ?? metadata.agent;
-    const nextModel = normalizeOptionalText(updates.model) ?? metadata.model;
-    const nextMetadata: SessionMetadata = {
-      ...metadata,
-      agent: nextAgentProvider,
-      agentProvider: nextAgentProvider as AgentProvider,
-      model: nextModel,
-      reasoningEffort: updates.reasoningEffort === undefined
-        ? metadata.reasoningEffort
-        : normalizeProviderReasoningEffort(nextAgentProvider, updates.reasoningEffort),
-      threadId: updates.threadId === undefined ? metadata.threadId : (normalizeOptionalText(updates.threadId) ?? undefined),
-      activeTurnId: updates.activeTurnId === undefined
-        ? metadata.activeTurnId
-        : (normalizeOptionalText(updates.activeTurnId) ?? undefined),
-      runState: updates.runState === undefined
-        ? metadata.runState
-        : (normalizeOptionalText(updates.runState) as SessionAgentRunState | undefined),
-      lastError: updates.lastError === undefined ? metadata.lastError : (normalizeOptionalText(updates.lastError) ?? undefined),
-      lastActivityAt: updates.lastActivityAt === undefined
-        ? metadata.lastActivityAt
-        : (normalizeOptionalText(updates.lastActivityAt) ?? undefined),
-    };
-
-    await saveSessionMetadata(nextMetadata);
-    return { success: true, runtime: toSessionAgentRuntimeState(nextMetadata) };
+    return { success: true, runtime };
   } catch (e: unknown) {
     console.error('Failed to update session agent runtime state:', e);
     return { success: false, error: getErrorMessage(e) };
@@ -2018,26 +1966,8 @@ export async function listSessionAgentHistory(
   query: SessionAgentHistoryQuery = {},
 ): Promise<SessionAgentHistoryItem[]> {
   try {
-    const threadId = normalizeOptionalText(query.threadId);
-    const turnId = normalizeOptionalText(query.turnId);
-    const limit = typeof query.limit === 'number' && Number.isFinite(query.limit) && query.limit > 0
-      ? Math.floor(query.limit)
-      : undefined;
-    let rows = Object.values(readLocalState().sessionAgentHistoryItems[sessionName] ?? {})
-      .map(toSessionAgentHistoryRow)
-      .filter((row) => (!threadId || row.thread_id === threadId) && (!turnId || row.turn_id === turnId))
-      .sort((left, right) => (
-        (left.ordinal ?? 0) - (right.ordinal ?? 0)
-        || left.created_at.localeCompare(right.created_at)
-        || left.item_id.localeCompare(right.item_id)
-      ));
-
-    if (limit !== undefined) {
-      rows = rows.slice(0, limit);
-    }
-    return sortSessionHistoryForTimeline(rows
-      .map((row) => toSessionAgentHistoryItem(row))
-      .filter((item): item is SessionAgentHistoryItem => Boolean(item)));
+    flushSessionState(sessionName);
+    return listSessionHistory(sessionName, query);
   } catch (e) {
     console.error('Failed to list session agent history:', e);
     return [];
@@ -2046,6 +1976,7 @@ export async function listSessionAgentHistory(
 
 export async function getSessionAgentSnapshot(
   sessionName: string,
+  query: SessionAgentHistoryQuery = {},
 ): Promise<{ success: boolean; snapshot?: SessionAgentSnapshot; error?: string }> {
   try {
     const metadata = await getSessionMetadata(sessionName);
@@ -2053,169 +1984,28 @@ export async function getSessionAgentSnapshot(
       return { success: false, error: 'Session metadata not found' };
     }
 
-    const history = await listSessionAgentHistory(sessionName);
+    flushSessionState(sessionName);
+    const historyPage = readSessionHistoryPage(sessionName, {
+      limit: query.limit ?? 300,
+      ...(query.beforeOrdinal !== undefined ? { beforeOrdinal: query.beforeOrdinal } : {}),
+      ...(query.threadId ? { threadId: query.threadId } : {}),
+      ...(query.turnId ? { turnId: query.turnId } : {}),
+    });
     return {
       success: true,
       snapshot: {
         metadata,
         runtime: toSessionAgentRuntimeState(metadata),
-        history,
+        history: historyPage.history,
+        historyPage: {
+          hasOlder: historyPage.hasOlder,
+          oldestLoadedOrdinal: historyPage.oldestLoadedOrdinal,
+        },
       },
     };
   } catch (e: unknown) {
     console.error('Failed to get session agent snapshot:', e);
     return { success: false, error: getErrorMessage(e) };
-  }
-}
-
-type NormalizedHistoryWrite = {
-  itemId: string;
-  entry: HistoryEntry;
-  kind: HistoryEntry['kind'];
-  payloadJson: string;
-  threadIdProvided: boolean;
-  threadId: string | null;
-  turnIdProvided: boolean;
-  turnId: string | null;
-  ordinal: number;
-  statusProvided: boolean;
-  itemStatus: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-function normalizeHistoryWrite(input: SessionAgentHistoryInput): NormalizedHistoryWrite | null {
-  const itemId = normalizeOptionalText(input.id);
-  if (!itemId) return null;
-
-  const {
-    threadId,
-    turnId,
-    ordinal,
-    itemStatus,
-    createdAt,
-    updatedAt,
-    ...entry
-  } = input;
-
-  const normalizedEntry = { ...entry, id: itemId } as HistoryEntry;
-  const normalizedOrdinal = typeof ordinal === 'number' && Number.isFinite(ordinal)
-    ? Math.max(0, Math.floor(ordinal))
-    : 0;
-
-  return {
-    itemId,
-    entry: normalizedEntry,
-    kind: normalizedEntry.kind,
-    payloadJson: JSON.stringify(normalizedEntry),
-    threadIdProvided: Object.prototype.hasOwnProperty.call(input, 'threadId'),
-    threadId: normalizeNullableText(threadId),
-    turnIdProvided: Object.prototype.hasOwnProperty.call(input, 'turnId'),
-    turnId: normalizeNullableText(turnId),
-    ordinal: normalizedOrdinal,
-    statusProvided: Object.prototype.hasOwnProperty.call(input, 'itemStatus'),
-    itemStatus: normalizeNullableText(itemStatus),
-    createdAt: normalizeOptionalText(createdAt) ?? new Date().toISOString(),
-    updatedAt: normalizeOptionalText(updatedAt) ?? new Date().toISOString(),
-  };
-}
-
-function parseHistoryEntryPayload(value: string): HistoryEntry | null {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return null;
-    }
-
-    const entry = parsed as Partial<HistoryEntry>;
-    return typeof entry.kind === 'string' && typeof entry.id === 'string'
-      ? (entry as HistoryEntry)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function mergeHistoryEntry(existing: HistoryEntry | null, next: HistoryEntry): HistoryEntry {
-  if (!existing || existing.kind !== next.kind) {
-    return next;
-  }
-
-  switch (next.kind) {
-    case 'user': {
-      const incoming = next as Extract<HistoryEntry, { kind: 'user' }>;
-      const current = existing as Extract<HistoryEntry, { kind: 'user' }>;
-      return {
-        ...incoming,
-        text: incoming.text || current.text,
-      };
-    }
-    case 'assistant': {
-      const incoming = next as Extract<HistoryEntry, { kind: 'assistant' }>;
-      const current = existing as Extract<HistoryEntry, { kind: 'assistant' }>;
-      return {
-        ...incoming,
-        text: incoming.text || current.text,
-        phase: incoming.phase ?? current.phase,
-      };
-    }
-    case 'reasoning': {
-      const incoming = next as Extract<HistoryEntry, { kind: 'reasoning' }>;
-      const current = existing as Extract<HistoryEntry, { kind: 'reasoning' }>;
-      return {
-        ...incoming,
-        summary: incoming.summary || current.summary,
-        text: incoming.text || current.text,
-      };
-    }
-    case 'command': {
-      const incoming = next as Extract<HistoryEntry, { kind: 'command' }>;
-      const current = existing as Extract<HistoryEntry, { kind: 'command' }>;
-      return {
-        ...incoming,
-        output: incoming.output || current.output,
-        status: incoming.status || current.status,
-        exitCode: incoming.exitCode ?? current.exitCode,
-        toolName: incoming.toolName ?? current.toolName,
-        toolInput: incoming.toolInput ?? current.toolInput,
-      };
-    }
-    case 'tool': {
-      const incoming = next as Extract<HistoryEntry, { kind: 'tool' }>;
-      const current = existing as Extract<HistoryEntry, { kind: 'tool' }>;
-      return {
-        ...incoming,
-        source: incoming.source || current.source,
-        server: incoming.server ?? current.server,
-        status: incoming.status || current.status,
-        input: incoming.input ?? current.input,
-        message: incoming.message ?? current.message,
-        result: incoming.result ?? current.result,
-        error: incoming.error ?? current.error,
-      };
-    }
-    case 'fileChange': {
-      const incoming = next as Extract<HistoryEntry, { kind: 'fileChange' }>;
-      const current = existing as Extract<HistoryEntry, { kind: 'fileChange' }>;
-      return {
-        ...incoming,
-        status: incoming.status || current.status,
-        output: incoming.output || current.output,
-        changes: incoming.changes.length > 0 ? incoming.changes : current.changes,
-      };
-    }
-    case 'plan': {
-      const incoming = next as Extract<HistoryEntry, { kind: 'plan' }>;
-      const current = existing as Extract<HistoryEntry, { kind: 'plan' }>;
-      const steps = incoming.steps && incoming.steps.length > 0
-        ? incoming.steps
-        : current.steps;
-      return {
-        ...incoming,
-        text: incoming.text || current.text || buildPlanText(steps ?? []),
-        steps,
-      };
-    }
   }
 }
 
@@ -2229,45 +2019,12 @@ export async function upsertSessionAgentHistory(
       return { success: false, error: 'Session metadata not found' };
     }
 
-    const normalizedEntries = entries
-      .map((entry) => normalizeHistoryWrite(entry))
-      .filter((entry): entry is NormalizedHistoryWrite => Boolean(entry));
-
-    if (normalizedEntries.length === 0) {
+    if (entries.length === 0) {
       return { success: true, history: await listSessionAgentHistory(sessionName) };
     }
 
-    updateLocalState((state) => {
-      const sessionHistory = state.sessionAgentHistoryItems[sessionName] ?? {};
-      for (const write of normalizedEntries) {
-        const existingRecord = sessionHistory[write.itemId];
-        const existing = existingRecord ? toSessionAgentHistoryRow(existingRecord) : undefined;
-        const mergedEntry = mergeHistoryEntry(
-          existing ? parseHistoryEntryPayload(existing.payload_json) : null,
-          write.entry,
-        );
-        sessionHistory[write.itemId] = {
-          sessionName,
-          itemId: write.itemId,
-          threadId: write.threadIdProvided ? write.threadId : (existing?.thread_id ?? null),
-          turnId: write.turnIdProvided ? write.turnId : (existing?.turn_id ?? null),
-          ordinal: write.ordinal,
-          kind: write.kind,
-          status: write.statusProvided ? write.itemStatus : (existing?.status ?? null),
-          payloadJson: JSON.stringify(mergedEntry),
-          createdAt: existing?.created_at ?? write.createdAt,
-          updatedAt: write.updatedAt,
-        };
-      }
-      state.sessionAgentHistoryItems[sessionName] = sessionHistory;
-      const session = state.sessions[sessionName];
-      if (session) {
-        session.lastActivityAt = normalizedEntries.reduce(
-          (latest, entry) => (latest > entry.updatedAt ? latest : entry.updatedAt),
-          normalizedEntries[0]?.updatedAt ?? new Date().toISOString(),
-        );
-      }
-    });
+    upsertSessionHistoryEntries(sessionName, entries);
+    flushSessionState(sessionName);
     return { success: true, history: await listSessionAgentHistory(sessionName) };
   } catch (e: unknown) {
     console.error('Failed to upsert session agent history:', e);
@@ -2285,32 +2042,8 @@ export async function replaceSessionAgentHistory(
       return { success: false, error: 'Session metadata not found' };
     }
 
-    const normalizedEntries = entries
-      .map((entry) => normalizeHistoryWrite(entry))
-      .filter((entry): entry is NormalizedHistoryWrite => Boolean(entry));
-    updateLocalState((state) => {
-      state.sessionAgentHistoryItems[sessionName] = Object.fromEntries(
-        normalizedEntries.map((write) => [write.itemId, {
-          sessionName,
-          itemId: write.itemId,
-          threadId: write.threadId,
-          turnId: write.turnId,
-          ordinal: write.ordinal,
-          kind: write.kind,
-          status: write.itemStatus,
-          payloadJson: write.payloadJson,
-          createdAt: write.createdAt,
-          updatedAt: write.updatedAt,
-        }]),
-      );
-      const session = state.sessions[sessionName];
-      if (session) {
-        session.lastActivityAt = normalizedEntries.reduce(
-          (latest, entry) => (latest > entry.updatedAt ? latest : entry.updatedAt),
-          normalizedEntries[0]?.updatedAt ?? new Date().toISOString(),
-        );
-      }
-    });
+    replaceSessionHistoryEntries(sessionName, entries);
+    flushSessionState(sessionName);
     return { success: true, history: await listSessionAgentHistory(sessionName) };
   } catch (e: unknown) {
     console.error('Failed to replace session agent history:', e);
@@ -2322,9 +2055,8 @@ export async function clearSessionAgentHistory(
   sessionName: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    updateLocalState((state) => {
-      delete state.sessionAgentHistoryItems[sessionName];
-    });
+    clearSessionHistory(sessionName);
+    flushSessionState(sessionName);
     return { success: true };
   } catch (e: unknown) {
     console.error('Failed to clear session agent history:', e);
@@ -2896,8 +2628,8 @@ const DEFAULT_DELETE_SESSION_DEPS: DeleteSessionDependencies = {
       delete state.sessions[sessionName];
       delete state.sessionLaunchContexts[sessionName];
       delete state.sessionCanvasLayouts[sessionName];
-      delete state.sessionAgentHistoryItems[sessionName];
     });
+    deletePersistedSessionState(sessionName);
   },
   getSessionPromptsDir,
   publishSessionListUpdated,

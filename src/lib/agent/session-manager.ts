@@ -19,6 +19,7 @@ import {
 } from '@/lib/agent/session-run-state';
 import { resolveGitSessionEnvironments } from '@/lib/git-session-auth';
 import {
+  flushSessionState,
   listSessionHistory,
   readSessionRuntime,
   updateSessionRuntime,
@@ -857,6 +858,7 @@ export async function startSessionTurn(input: StartTurnInput): Promise<{
         }));
         if (event.type === 'turn_started') {
           updateRunDiagnosticsForRuntimeState(sessionId, 'running', now);
+          flushSessionState(sessionId);
         } else if (event.type === 'turn_completed') {
           const completionState = event.error
             ? (event.error === 'Request cancelled.' ? 'cancelled' : 'error')
@@ -864,6 +866,9 @@ export async function startSessionTurn(input: StartTurnInput): Promise<{
                 ? 'cancelled'
                 : (event.status === 'failed' || event.status === 'error' ? 'error' : 'completed'));
           updateRunDiagnosticsForRuntimeState(sessionId, completionState, now);
+          flushSessionState(sessionId);
+        } else if (event.type === 'error') {
+          flushSessionState(sessionId);
         }
 
         await publishRuntimeEvent(sessionId, event as ChatStreamEvent);
@@ -900,6 +905,7 @@ export async function startSessionTurn(input: StartTurnInput): Promise<{
         abortController.signal.aborted ? 'cancelled' : 'error',
         failureTimestamp,
       );
+      flushSessionState(sessionId);
 
       if (runtime) {
         await publishSessionAgentEvent({
@@ -958,6 +964,7 @@ export async function cancelSessionTurn(sessionId: string): Promise<{
     lastActivityAt: cancelledAt,
   });
   updateRunDiagnosticsForRuntimeState(normalizedSessionId, 'cancelled', cancelledAt);
+  flushSessionState(normalizedSessionId);
 
   if (runtime) {
     await publishSessionAgentEvent({
