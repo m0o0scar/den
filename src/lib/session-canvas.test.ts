@@ -32,7 +32,7 @@ describe('session canvas layout helpers', () => {
     return panel as SessionCanvasTerminalPanel;
   }
 
-  it('creates the default canvas layout with terminal-first panels', () => {
+  it('creates the default canvas layout with a startup terminal when a startup script exists', () => {
     const layout = createDefaultSessionCanvasLayout({
       workspacePath: '/tmp/workspace',
       activeRepoPath: '/tmp/workspace/repo',
@@ -46,13 +46,31 @@ describe('session canvas layout helpers', () => {
       layout.panels.map((panel) => panel.type),
       ['agent-terminal', 'terminal'],
     );
-    assert.equal(layout.panels[0]?.width, 800);
-    assert.equal(layout.panels[0]?.height, 1000);
+    assert.equal(layout.panels[0]?.width, 1000);
+    assert.equal(layout.panels[0]?.height, 1200);
     assert.equal(layout.panels[0]?.y, layout.panels[1]?.y);
     assert.equal(layout.panels[1]!.x > layout.panels[0]!.x + layout.panels[0]!.width, true);
     assert.equal(layout.panels[1]?.height, 420);
     assert.equal(layout.panelDefaults?.preview?.width, 900);
     assert.equal(layout.panelDefaults?.preview?.height, 600);
+    assert.equal(layout.bootstrap.agentStarted, false);
+    assert.equal(layout.bootstrap.startupStarted, false);
+  });
+
+  it('creates the default canvas layout without a terminal when no startup script exists', () => {
+    const layout = createDefaultSessionCanvasLayout({
+      workspacePath: '/tmp/workspace',
+      activeRepoPath: '/tmp/workspace/repo',
+      startupScript: '   ',
+    });
+
+    assert.equal(layout.version, 2);
+    assert.deepEqual(
+      layout.panels.map((panel) => panel.type),
+      ['agent-terminal'],
+    );
+    assert.equal(layout.panels[0]?.width, 1000);
+    assert.equal(layout.panels[0]?.height, 1200);
     assert.equal(layout.bootstrap.agentStarted, false);
     assert.equal(layout.bootstrap.startupStarted, false);
   });
@@ -266,10 +284,21 @@ describe('session canvas layout helpers', () => {
   });
 
   it('derives shell-mode bootstrap from src even without a panel command', () => {
-    const startupPanel = expectTerminalPanel(createDefaultSessionCanvasLayout({
-      workspacePath: 'C:\\workspace',
-      startupScript: null,
-    }).panels[1]);
+    const startupPanel: SessionCanvasTerminalPanel = {
+      id: 'terminal:1',
+      type: 'terminal',
+      title: 'Terminal',
+      x: 120,
+      y: 96,
+      width: 760,
+      height: 420,
+      zIndex: 1,
+      state: {},
+      payload: {
+        terminalKey: 'terminal',
+        role: 'generic',
+      },
+    };
 
     const src = buildSessionCanvasTerminalSrc({
       sessionName: 'session-1',
