@@ -98,6 +98,7 @@ export function createDefaultSessionCanvasLayout({
   const startupTerminalX = SESSION_CANVAS_DEFAULT_TERMINAL_GROUP_X
     + SESSION_CANVAS_DEFAULT_AGENT_TERMINAL_WIDTH
     + SESSION_CANVAS_DEFAULT_TERMINAL_GAP;
+  const normalizedStartupScript = startupScript?.trim() || '';
   const drafts: SessionCanvasPanelDraft[] = [
     {
       type: 'agent-terminal',
@@ -110,9 +111,12 @@ export function createDefaultSessionCanvasLayout({
         terminalKey: 'agent',
       },
     },
-    {
+  ];
+
+  if (normalizedStartupScript) {
+    drafts.push({
       type: 'terminal',
-      title: startupScript?.trim() ? 'Startup Terminal' : 'Terminal',
+      title: 'Startup Terminal',
       x: startupTerminalX,
       y: SESSION_CANVAS_DEFAULT_TERMINAL_GROUP_Y,
       width: 760,
@@ -121,8 +125,8 @@ export function createDefaultSessionCanvasLayout({
         terminalKey: 'terminal',
         role: 'startup',
       },
-    },
-  ];
+    });
+  }
 
   return {
     version: SESSION_CANVAS_LAYOUT_VERSION,
