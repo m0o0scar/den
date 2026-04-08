@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-const ATTACHMENTS_ROOT_DIR = path.join(os.tmpdir(), 'viba-attachments');
+const ATTACHMENTS_ROOT_DIR = path.join(/* turbopackIgnore: true */ os.tmpdir(), 'viba-attachments');
 export const MAX_ATTACHMENT_FILE_BYTES = 25 * 1024 * 1024;
 export const MAX_ATTACHMENT_TOTAL_BYTES = 50 * 1024 * 1024;
 
@@ -51,8 +51,8 @@ export async function saveAttachmentsFromEntries(
   }
 
   const worktreeLabel = path.basename(normalizedWorktreePath).replace(/[^a-zA-Z0-9._-]/g, '_') || 'workspace';
-  const attachmentsDir = path.join(ATTACHMENTS_ROOT_DIR, worktreeLabel);
-  await fs.mkdir(attachmentsDir, { recursive: true });
+  const attachmentsDir = path.join(/* turbopackIgnore: true */ ATTACHMENTS_ROOT_DIR, worktreeLabel);
+  await fs.mkdir(/* turbopackIgnore: true */ attachmentsDir, { recursive: true });
 
   const savedPaths: string[] = [];
   let totalBytes = 0;
@@ -81,14 +81,14 @@ export async function saveAttachmentsFromEntries(
     const baseName = parsed.name || `attachment-${Date.now()}`;
     const extension = parsed.ext || '';
     let candidateName = `${baseName}${extension}`;
-    let fullPath = path.join(attachmentsDir, candidateName);
+    let fullPath = path.join(/* turbopackIgnore: true */ attachmentsDir, candidateName);
     let suffix = 1;
 
     while (true) {
       try {
-        await fs.access(fullPath);
+        await fs.access(/* turbopackIgnore: true */ fullPath);
         candidateName = `${baseName}-${suffix}${extension}`;
-        fullPath = path.join(attachmentsDir, candidateName);
+        fullPath = path.join(/* turbopackIgnore: true */ attachmentsDir, candidateName);
         suffix += 1;
       } catch {
         break;
@@ -96,7 +96,7 @@ export async function saveAttachmentsFromEntries(
     }
 
     const buffer = Buffer.from(await entry.arrayBuffer());
-    await fs.writeFile(fullPath, buffer);
+    await fs.writeFile(/* turbopackIgnore: true */ fullPath, buffer);
     savedPaths.push(fullPath);
   }
 

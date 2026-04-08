@@ -14,7 +14,7 @@ export function resolveStoredProjectSessionContext(
 
   return {
     projectId: project.id,
-    normalizedProjectPath: primaryFolderPath || normalizeProjectFolderPath(os.homedir()),
+    normalizedProjectPath: primaryFolderPath || normalizeProjectFolderPath(/* turbopackIgnore: true */ os.homedir()),
     normalizedFolderPaths,
   };
 }

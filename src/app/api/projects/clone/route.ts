@@ -50,10 +50,10 @@ export async function POST(request: Request) {
     const { repoUrl, destinationParent, folderName, credentialId } = cloneProjectSchema.parse(body);
 
     const normalizedParent = normalizeProjectFolderPath(destinationParent);
-    if (!fs.existsSync(normalizedParent)) {
+    if (!fs.existsSync(/* turbopackIgnore: true */ normalizedParent)) {
       return NextResponse.json({ error: `Destination parent folder not found: ${normalizedParent}` }, { status: 404 });
     }
-    if (!fs.statSync(normalizedParent).isDirectory()) {
+    if (!fs.statSync(/* turbopackIgnore: true */ normalizedParent).isDirectory()) {
       return NextResponse.json({ error: `Destination parent is not a directory: ${normalizedParent}` }, { status: 400 });
     }
 
@@ -63,19 +63,19 @@ export async function POST(request: Request) {
     }
 
     const normalizedFolderName = normalizeFolderName(inferredFolderName);
-    const normalizedDestinationPath = path.join(normalizedParent, normalizedFolderName);
+    const normalizedDestinationPath = path.join(/* turbopackIgnore: true */ normalizedParent, normalizedFolderName);
 
     const existingProject = findProjectByFolderPath(normalizedDestinationPath);
     if (existingProject) {
       return NextResponse.json({ error: 'Project already exists' }, { status: 400 });
     }
 
-    if (fs.existsSync(normalizedDestinationPath)) {
-      const stat = fs.statSync(normalizedDestinationPath);
+    if (fs.existsSync(/* turbopackIgnore: true */ normalizedDestinationPath)) {
+      const stat = fs.statSync(/* turbopackIgnore: true */ normalizedDestinationPath);
       if (!stat.isDirectory()) {
         return NextResponse.json({ error: `Destination path is not a folder: ${normalizedDestinationPath}` }, { status: 400 });
       }
-      const entries = fs.readdirSync(normalizedDestinationPath);
+      const entries = fs.readdirSync(/* turbopackIgnore: true */ normalizedDestinationPath);
       if (entries.length > 0) {
         return NextResponse.json({ error: 'Destination folder already exists and is not empty' }, { status: 400 });
       }

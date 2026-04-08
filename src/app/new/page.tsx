@@ -98,13 +98,13 @@ const PREDEFINED_PROMPT_CONFIG = [
 ] as const;
 
 async function loadJulesPredefinedPrompts(): Promise<PredefinedPrompt[]> {
-  const promptDirectory = path.join(process.cwd(), 'src/prompts');
+  const promptDirectory = path.join(/* turbopackIgnore: true */ process.cwd(), 'src/prompts');
 
   const prompts = await Promise.all(
     PREDEFINED_PROMPT_CONFIG.map(async ({ id, group, label, fileName }) => {
       try {
         const content = (
-          await readFile(path.join(promptDirectory, fileName), 'utf8')
+          await readFile(path.join(/* turbopackIgnore: true */ promptDirectory, fileName), 'utf8')
         ).trim();
         if (!content) return null;
         return { id, group, label, content };

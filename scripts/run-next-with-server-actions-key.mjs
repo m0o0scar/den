@@ -44,6 +44,137 @@ function parseExplicitPort(nextArgs) {
   return { argsWithoutPort, port, portExplicit };
 }
 
+function isProcessRunning(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+function hasActiveDevLock(devDir, { fsImpl = fs, isProcessRunningImpl = isProcessRunning } = {}) {
+  try {
+    const lockPath = path.join(devDir, "lock");
+    if (!fsImpl.existsSync(lockPath)) {
+      return false;
+    }
+
+    const lock = JSON.parse(fsImpl.readFileSync(lockPath, "utf8"));
+    return isProcessRunningImpl(lock.pid);
+  } catch {
+    return false;
+  }
+}
+
+function findFirstInvalidJsonFile(rootDir, { fsImpl = fs } = {}) {
+  if (!fsImpl.existsSync(rootDir)) {
+    return null;
+  }
+
+  const pending = [rootDir];
+  while (pending.length > 0) {
+    const currentDir = pending.pop();
+    const entries = fsImpl.readdirSync(currentDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+
+      if (entry.isDirectory()) {
+        pending.push(fullPath);
+        continue;
+      }
+
+      if (!entry.isFile() || !entry.name.endsWith(".json")) {
+        continue;
+      }
+
+      try {
+        JSON.parse(fsImpl.readFileSync(fullPath, "utf8"));
+      } catch {
+        return fullPath;
+      }
+    }
+  }
+
+  return null;
+}
+
+function findFirstSyntheticMissingModuleStub(rootDir, { fsImpl = fs } = {}) {
+  if (!fsImpl.existsSync(rootDir)) {
+    return null;
+  }
+
+  const pending = [rootDir];
+  while (pending.length > 0) {
+    const currentDir = pending.pop();
+    const entries = fsImpl.readdirSync(currentDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+
+      if (entry.isDirectory()) {
+        pending.push(fullPath);
+        continue;
+      }
+
+      if (!entry.isFile() || !entry.name.endsWith(".js")) {
+        continue;
+      }
+
+      let content;
+      try {
+        content = fsImpl.readFileSync(fullPath, "utf8");
+      } catch {
+        continue;
+      }
+
+      if (
+        content.includes("Could not parse module")
+        && content.includes("file not found")
+        && content.includes("MODULE_UNPARSABLE")
+      ) {
+        return fullPath;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function repairCorruptedDevArtifacts(
+  appRoot = APP_ROOT,
+  { fsImpl = fs, isProcessRunningImpl = isProcessRunning } = {},
+) {
+  const devDir = path.join(appRoot, ".next", "dev");
+
+  if (!fsImpl.existsSync(devDir)) {
+    return { cleaned: false, reason: "missing" };
+  }
+
+  if (hasActiveDevLock(devDir, { fsImpl, isProcessRunningImpl })) {
+    return { cleaned: false, reason: "active-lock" };
+  }
+
+  const invalidFile = findFirstInvalidJsonFile(devDir, { fsImpl });
+  if (invalidFile) {
+    fsImpl.rmSync(devDir, { recursive: true, force: true });
+    return { cleaned: true, reason: "corrupt-json", invalidFile };
+  }
+
+  const stubFile = findFirstSyntheticMissingModuleStub(devDir, { fsImpl });
+  if (stubFile) {
+    fsImpl.rmSync(devDir, { recursive: true, force: true });
+    return { cleaned: true, reason: "missing-module-stub", invalidFile: stubFile };
+  }
+
+  return { cleaned: false, reason: "healthy" };
+}
+
 export async function resolveNextArgs(
   argv = process.argv.slice(2),
   env = process.env,
@@ -68,6 +199,16 @@ export async function resolveNextArgs(
 }
 
 export async function run(argv = process.argv.slice(2), { env = process.env, spawnImpl = spawn } = {}) {
+  if (argv[0] === "dev") {
+    const repairResult = repairCorruptedDevArtifacts(APP_ROOT);
+    if (repairResult.cleaned) {
+      const invalidPath = path.relative(APP_ROOT, repairResult.invalidFile);
+      console.warn(
+        `Detected corrupted Turbopack dev state in ${invalidPath}. Removed .next/dev before starting Next.js.`,
+      );
+    }
+  }
+
   const { nextArgs, port, preferredPort } = await resolveNextArgs(argv, env);
   if (typeof port === "number" && port !== preferredPort) {
     console.log(`Port ${preferredPort} is in use. Using ${port} instead.`);

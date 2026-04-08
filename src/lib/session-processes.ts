@@ -82,11 +82,11 @@ function slugifyProjectPath(projectPath: string): string {
 
 export function getSessionRootPath(projectPath: string, sessionName: string): string {
   const projectSlug = slugifyProjectPath(projectPath);
-  return path.join(os.homedir(), '.viba', 'projects', projectSlug, sessionName);
+  return path.join(/* turbopackIgnore: true */ os.homedir(), '.viba', 'projects', projectSlug, sessionName);
 }
 
 function getTrackedProcessesPath(projectPath: string, sessionName: string): string {
-  return path.join(getSessionRootPath(projectPath, sessionName), 'tracked-processes.json');
+  return path.join(/* turbopackIgnore: true */ getSessionRootPath(projectPath, sessionName), 'tracked-processes.json');
 }
 
 function getTrackedProcessLogPath(
@@ -94,7 +94,7 @@ function getTrackedProcessLogPath(
   sessionName: string,
   role: SessionTrackedProcessRole,
 ): string {
-  return path.join(getSessionRootPath(projectPath, sessionName), `${role}.log`);
+  return path.join(/* turbopackIgnore: true */ getSessionRootPath(projectPath, sessionName), `${role}.log`);
 }
 
 async function readTrackedProcessesRegistry(
@@ -103,7 +103,7 @@ async function readTrackedProcessesRegistry(
 ): Promise<ProcessRegistryPayload> {
   const registryPath = getTrackedProcessesPath(projectPath, sessionName);
   try {
-    const raw = await fs.readFile(registryPath, 'utf-8');
+    const raw = await fs.readFile(/* turbopackIgnore: true */ registryPath, 'utf-8');
     const parsed = JSON.parse(raw) as { processes?: unknown };
     const processes = Array.isArray(parsed.processes)
       ? parsed.processes.map((entry) => parseTrackedProcess(entry)).filter(Boolean) as SessionTrackedProcess[]
@@ -120,8 +120,8 @@ async function writeTrackedProcessesRegistry(
   payload: ProcessRegistryPayload,
 ): Promise<void> {
   const registryPath = getTrackedProcessesPath(projectPath, sessionName);
-  await fs.mkdir(path.dirname(registryPath), { recursive: true });
-  await fs.writeFile(registryPath, JSON.stringify(payload, null, 2), 'utf-8');
+  await fs.mkdir(path.dirname(/* turbopackIgnore: true */ registryPath), { recursive: true });
+  await fs.writeFile(/* turbopackIgnore: true */ registryPath, JSON.stringify(payload, null, 2), 'utf-8');
 }
 
 function parseTrackedProcess(value: unknown): SessionTrackedProcess | null {
@@ -347,7 +347,7 @@ export async function clearTrackedSessionProcess(
   const nextProcesses = processes.processes.filter((processEntry) => processEntry.role !== role);
   if (nextProcesses.length === 0) {
     const registryPath = getTrackedProcessesPath(projectPath, sessionName);
-    await fs.rm(registryPath, { force: true });
+    await fs.rm(/* turbopackIgnore: true */ registryPath, { force: true });
     return;
   }
   await writeTrackedProcessesRegistry(projectPath, sessionName, { processes: nextProcesses });
@@ -378,8 +378,8 @@ export async function clearTrackedSessionProcessLog(
   role: SessionTrackedProcessRole,
 ): Promise<void> {
   const logPath = getTrackedProcessLogPath(projectPath, sessionName, role);
-  await fs.mkdir(path.dirname(logPath), { recursive: true });
-  await fs.writeFile(logPath, '', 'utf-8');
+  await fs.mkdir(path.dirname(/* turbopackIgnore: true */ logPath), { recursive: true });
+  await fs.writeFile(/* turbopackIgnore: true */ logPath, '', 'utf-8');
 }
 
 export async function stopAllTrackedSessionProcesses(
@@ -436,8 +436,8 @@ export async function launchTrackedSessionProcess(
     env = {},
   } = options;
   const logPath = getTrackedProcessLogPath(projectPath, sessionName, role);
-  await fs.mkdir(path.dirname(logPath), { recursive: true });
-  const logFd = fsSync.openSync(logPath, 'a');
+  await fs.mkdir(path.dirname(/* turbopackIgnore: true */ logPath), { recursive: true });
+  const logFd = fsSync.openSync(/* turbopackIgnore: true */ logPath, 'a');
   const shellArgs = shellCommand.shellKind === 'powershell'
     ? [...shellCommand.args, '-NoProfile', '-Command', command]
     : [...shellCommand.args, '-lc', command];
@@ -519,7 +519,7 @@ export async function inferTrackedProcessPreviewUrl(
     return null;
   }
   try {
-    const raw = await fs.readFile(processEntry.logPath, 'utf-8');
+    const raw = await fs.readFile(/* turbopackIgnore: true */ processEntry.logPath, 'utf-8');
     const localMatch = raw.match(/Local:\s+(https?:\/\/\S+)/i);
     if (localMatch?.[1]) {
       return normalizePreviewUrl(localMatch[1]);
@@ -559,7 +559,7 @@ export async function readTrackedSessionProcessLog(
 ): Promise<string> {
   const logPath = getTrackedProcessLogPath(projectPath, sessionName, role);
   try {
-    const raw = await fs.readFile(logPath);
+    const raw = await fs.readFile(/* turbopackIgnore: true */ logPath);
     if (raw.byteLength <= maxBytes) {
       return raw.toString('utf-8');
     }
@@ -572,9 +572,9 @@ export async function readTrackedSessionProcessLog(
 export async function cleanupStaleNextDevLock(
   workspacePath: string,
 ): Promise<boolean> {
-  const lockPath = path.join(workspacePath, '.next', 'dev', 'lock');
+  const lockPath = path.join(/* turbopackIgnore: true */ workspacePath, '.next', 'dev', 'lock');
   try {
-    await fs.access(lockPath);
+    await fs.access(/* turbopackIgnore: true */ lockPath);
   } catch {
     return false;
   }
@@ -587,6 +587,6 @@ export async function cleanupStaleNextDevLock(
     return false;
   }
 
-  await fs.rm(lockPath, { force: true });
+  await fs.rm(/* turbopackIgnore: true */ lockPath, { force: true });
   return true;
 }

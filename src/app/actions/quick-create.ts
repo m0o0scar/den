@@ -450,12 +450,12 @@ async function createProjectFromDefaultRoot(
     throw new Error('Default root is not configured for creating new projects.');
   }
 
-  const defaultRootStats = await fs.stat(defaultRoot).catch(() => null);
+  const defaultRootStats = await fs.stat(/* turbopackIgnore: true */ defaultRoot).catch(() => null);
   if (!defaultRootStats?.isDirectory()) {
     throw new Error('Default root does not exist or is not a directory.');
   }
 
-  const projectPath = path.join(defaultRoot, normalizedProjectName);
+  const projectPath = path.join(/* turbopackIgnore: true */ defaultRoot, normalizedProjectName);
   const existingProject = findProjectByFolderPath(projectPath);
   if (existingProject) {
     return {
@@ -465,13 +465,13 @@ async function createProjectFromDefaultRoot(
     };
   }
 
-  const existingPathStats = await fs.stat(projectPath).catch(() => null);
+  const existingPathStats = await fs.stat(/* turbopackIgnore: true */ projectPath).catch(() => null);
   if (existingPathStats && !existingPathStats.isDirectory()) {
     throw new Error(`Project path is not a directory: ${projectPath}`);
   }
 
   if (!existingPathStats) {
-    await fs.mkdir(projectPath, { recursive: false });
+    await fs.mkdir(/* turbopackIgnore: true */ projectPath, { recursive: false });
   }
 
   const project = addProject({

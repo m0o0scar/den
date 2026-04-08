@@ -3,8 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 
 const STATE_FILE_NAME = 'palx-state.json';
-const VIBA_DIR = path.join(os.homedir(), '.viba');
-const STATE_PATH = path.join(VIBA_DIR, STATE_FILE_NAME);
+const VIBA_DIR = path.join(/* turbopackIgnore: true */ os.homedir(), '.viba');
+const STATE_PATH = path.join(/* turbopackIgnore: true */ VIBA_DIR, STATE_FILE_NAME);
 
 export type LocalProjectRecord = {
   id: string;

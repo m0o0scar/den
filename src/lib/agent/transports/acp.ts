@@ -311,7 +311,7 @@ const providerConfigs: Record<AcpProviderId, AcpProviderConfig> = {
             selectedType?: string;
           };
         };
-      }>(path.join(os.homedir(), ".gemini", "settings.json"));
+      }>(path.join(/* turbopackIgnore: true */ os.homedir(), ".gemini", "settings.json"));
       const selectedType = settings?.security?.auth?.selectedType ?? null;
 
       if (selectedType === "gemini-api-key") {
@@ -340,8 +340,8 @@ const providerConfigs: Record<AcpProviderId, AcpProviderConfig> = {
       }
 
       const loggedIn =
-        existsSync(path.join(os.homedir(), ".gemini", "oauth_creds.json")) ||
-        existsSync(path.join(os.homedir(), ".gemini", "google_accounts.json"));
+        existsSync(path.join(/* turbopackIgnore: true */ os.homedir(), ".gemini", "oauth_creds.json")) ||
+        existsSync(path.join(/* turbopackIgnore: true */ os.homedir(), ".gemini", "google_accounts.json"));
 
       return {
         loggedIn,
@@ -398,7 +398,7 @@ const providerConfigs: Record<AcpProviderId, AcpProviderConfig> = {
         authInfo?: {
           email?: string;
         };
-      }>(path.join(os.homedir(), ".cursor", "cli-config.json"));
+      }>(path.join(/* turbopackIgnore: true */ os.homedir(), ".cursor", "cli-config.json"));
       const email = config?.authInfo?.email ?? null;
       return {
         loggedIn: Boolean(email),
@@ -647,13 +647,13 @@ async function createAcpConnection(
       readTextFile: async ({ path: rawPath }) => {
         const resolvedPath = resolveSessionPath(workspacePath, rawPath);
         return {
-          content: await readFile(resolvedPath, "utf8"),
+          content: await readFile(/* turbopackIgnore: true */ resolvedPath, "utf8"),
         };
       },
       writeTextFile: async ({ path: rawPath, content }) => {
         const resolvedPath = resolveSessionPath(workspacePath, rawPath);
-        await mkdir(path.dirname(resolvedPath), { recursive: true });
-        await writeFile(resolvedPath, content, "utf8");
+        await mkdir(path.dirname(/* turbopackIgnore: true */ resolvedPath), { recursive: true });
+        await writeFile(/* turbopackIgnore: true */ resolvedPath, content, "utf8");
         return {};
       },
     }),
@@ -1260,11 +1260,11 @@ class AcpHistoryCollector {
 }
 
 async function probeLoggedIn(config: AcpProviderConfig) {
-  const connection = await createAcpConnection(config, process.cwd());
+  const connection = await createAcpConnection(config, /* turbopackIgnore: true */ process.cwd());
 
   try {
     await connection.client.newSession({
-      cwd: process.cwd(),
+      cwd: /* turbopackIgnore: true */ process.cwd(),
       mcpServers: [],
     });
     return true;
@@ -1287,7 +1287,7 @@ async function ensureInstalledInternal(
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(config.install.command, config.install.args, {
-      cwd: process.cwd(),
+      cwd: /* turbopackIgnore: true */ process.cwd(),
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -1327,7 +1327,7 @@ async function startAcpAuthLogin(config: AcpProviderConfig) {
   });
 
   const finished = (async () => {
-    const connection = await createAcpConnection(config, process.cwd());
+    const connection = await createAcpConnection(config, /* turbopackIgnore: true */ process.cwd());
 
     try {
       const authMethod = pickAuthMethod(connection.init.authMethods ?? [], login.methodId);
@@ -1388,7 +1388,7 @@ async function startCommandLogin(config: AcpProviderConfig) {
   });
 
   const child = spawn(binaryPath, login.args, {
-    cwd: process.cwd(),
+    cwd: /* turbopackIgnore: true */ process.cwd(),
     env,
     stdio: ["ignore", "pipe", "pipe"],
   });

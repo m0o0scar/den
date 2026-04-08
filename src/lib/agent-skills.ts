@@ -12,25 +12,25 @@ export type SkillDirectoryOptions = {
 };
 
 export function getCodexSkillsDirectory(): string {
-  const codexHome = process.env.CODEX_HOME?.trim() || path.join(os.homedir(), '.codex');
-  return path.join(codexHome, 'skills');
+  const codexHome = process.env.CODEX_HOME?.trim() || path.join(/* turbopackIgnore: true */ os.homedir(), '.codex');
+  return path.join(/* turbopackIgnore: true */ codexHome, 'skills');
 }
 
 export function getGlobalAgentsSkillsDirectory(): string {
-  return path.join(os.homedir(), '.agents', 'skills');
+  return path.join(/* turbopackIgnore: true */ os.homedir(), '.agents', 'skills');
 }
 
 async function listSkillNamesFromDirectory(rootPath: string): Promise<string[]> {
   try {
-    const entries = await fs.readdir(rootPath, { withFileTypes: true });
+    const entries = await fs.readdir(/* turbopackIgnore: true */ rootPath, { withFileTypes: true });
     const installedSkillNames: string[] = [];
 
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
 
       try {
-        const manifestPath = path.join(rootPath, entry.name, 'SKILL.md');
-        const stats = await fs.stat(manifestPath);
+        const manifestPath = path.join(/* turbopackIgnore: true */ rootPath, entry.name, 'SKILL.md');
+        const stats = await fs.stat(/* turbopackIgnore: true */ manifestPath);
         if (stats.isFile()) {
           installedSkillNames.push(entry.name);
         }
@@ -81,8 +81,8 @@ export async function isSkillInstalled(skillName: string, options: SkillDirector
 
   try {
     await Promise.any([
-      fs.access(path.join(globalAgentsSkillsDirectory, skillName, 'SKILL.md')),
-      fs.access(path.join(codexSkillsDirectory, skillName, 'SKILL.md')),
+      fs.access(path.join(/* turbopackIgnore: true */ globalAgentsSkillsDirectory, skillName, 'SKILL.md')),
+      fs.access(path.join(/* turbopackIgnore: true */ codexSkillsDirectory, skillName, 'SKILL.md')),
     ]);
     return true;
   } catch {

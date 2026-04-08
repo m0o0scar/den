@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 const COMMON_BIN_DIRS = [
-  path.join(os.homedir(), ".local", "bin"),
+  path.join(/* turbopackIgnore: true */ os.homedir(), ".local", "bin"),
   "/opt/homebrew/bin",
   "/usr/local/bin",
   "/opt/homebrew/sbin",
@@ -120,7 +120,7 @@ export async function readCommandOutput(
 
 export async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
-    return JSON.parse(await readFile(filePath, "utf8")) as T;
+    return JSON.parse(await readFile(/* turbopackIgnore: true */ filePath, "utf8")) as T;
   } catch {
     return null;
   }

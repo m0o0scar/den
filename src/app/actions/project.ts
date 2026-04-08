@@ -102,9 +102,9 @@ function hasOverlappingRepoRoots(repoPaths: string[]): boolean {
 }
 
 async function isGitRepositoryRoot(dirPath: string): Promise<boolean> {
-  const gitPath = path.join(dirPath, '.git');
+  const gitPath = path.join(/* turbopackIgnore: true */ dirPath, '.git');
   try {
-    const gitStat = await fs.stat(gitPath);
+    const gitStat = await fs.stat(/* turbopackIgnore: true */ gitPath);
     return gitStat.isDirectory() || gitStat.isFile();
   } catch {
     return false;
@@ -196,7 +196,7 @@ async function discoverGitReposInFolder(folderPath: string): Promise<{
 
     let entries: Array<import('node:fs').Dirent>;
     try {
-      entries = await fs.readdir(normalizedCurrentDir, { withFileTypes: true });
+      entries = await fs.readdir(/* turbopackIgnore: true */ normalizedCurrentDir, { withFileTypes: true });
     } catch {
       continue;
     }
@@ -204,7 +204,7 @@ async function discoverGitReposInFolder(folderPath: string): Promise<{
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       if (DISCOVERY_SKIP_DIRS.has(entry.name)) continue;
-      queue.push({ dirPath: path.join(normalizedCurrentDir, entry.name), depth: current.depth + 1 });
+      queue.push({ dirPath: path.join(/* turbopackIgnore: true */ normalizedCurrentDir, entry.name), depth: current.depth + 1 });
     }
   }
 
@@ -543,7 +543,7 @@ export async function cloneRemoteProject(
   }
 
   const cloneRoot = normalizeProjectFolderPath(trimmedDestinationParent);
-  const cloneRootStats = await fs.stat(cloneRoot).catch(() => null);
+  const cloneRootStats = await fs.stat(/* turbopackIgnore: true */ cloneRoot).catch(() => null);
   if (!cloneRootStats?.isDirectory()) {
     return {
       success: false,
@@ -553,9 +553,9 @@ export async function cloneRemoteProject(
     };
   }
 
-  const targetPath = path.join(cloneRoot, projectName);
+  const targetPath = path.join(/* turbopackIgnore: true */ cloneRoot, projectName);
   try {
-    await fs.access(targetPath);
+    await fs.access(/* turbopackIgnore: true */ targetPath);
     return {
       success: false,
       projectId: null,
@@ -602,7 +602,7 @@ export async function cloneRemoteProject(
       credentialResolution.token ?? '',
     ]);
 
-    await fs.rm(targetPath, { recursive: true, force: true }).catch(() => {
+    await fs.rm(/* turbopackIgnore: true */ targetPath, { recursive: true, force: true }).catch(() => {
       // Ignore cleanup errors.
     });
 

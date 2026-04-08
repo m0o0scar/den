@@ -7,7 +7,7 @@ import { normalizeProjectFolderPath } from '@/lib/project-folders';
 import { buildManagedProjectIconPath } from '@/lib/project-icon-path';
 
 const MAX_ICON_BYTES = 2 * 1024 * 1024;
-const ICON_DIR = path.join(os.homedir(), '.viba', 'project-icons');
+const ICON_DIR = path.join(/* turbopackIgnore: true */ os.homedir(), '.viba', 'project-icons');
 const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.svg', '.ico']);
 
 type ParsedIconUpload = {
@@ -33,13 +33,13 @@ function isManagedIconPath(iconPath: string | null | undefined): boolean {
 
 async function removeExistingManagedIcon(iconPath: string | null | undefined): Promise<void> {
   if (!iconPath || !isManagedIconPath(iconPath)) return;
-  await fs.rm(iconPath, { force: true }).catch(() => {
+  await fs.rm(/* turbopackIgnore: true */ iconPath, { force: true }).catch(() => {
     // Ignore cleanup failures.
   });
 }
 
 async function ensureProjectDirectory(folderPath: string): Promise<void> {
-  const stats = await fs.stat(folderPath);
+  const stats = await fs.stat(/* turbopackIgnore: true */ folderPath);
   if (!stats.isDirectory()) {
     throw new Error('Project path must be a directory.');
   }
@@ -130,7 +130,7 @@ async function parseIconUpload(request: Request): Promise<ParsedIconUpload> {
     throw new Error('Unsupported icon type. Use png, jpg, jpeg, webp, svg, or ico.');
   }
 
-  const iconStats = await fs.stat(resolvedIconPath).catch(() => null);
+  const iconStats = await fs.stat(/* turbopackIgnore: true */ resolvedIconPath).catch(() => null);
   if (!iconStats) {
     throw new Error('Icon file not found.');
   }
@@ -146,7 +146,7 @@ async function parseIconUpload(request: Request): Promise<ParsedIconUpload> {
     projectPath: projectPathValue || undefined,
     kind: 'file',
     extension,
-    fileBuffer: await fs.readFile(resolvedIconPath),
+    fileBuffer: await fs.readFile(/* turbopackIgnore: true */ resolvedIconPath),
   };
 }
 
@@ -168,14 +168,14 @@ export async function POST(request: Request) {
       });
     }
 
-    await fs.mkdir(ICON_DIR, { recursive: true });
+    await fs.mkdir(/* turbopackIgnore: true */ ICON_DIR, { recursive: true });
     const destinationPath = buildManagedProjectIconPath(
       ICON_DIR,
       project.id,
       parsedUpload.extension!,
       parsedUpload.fileBuffer!,
     );
-    await fs.writeFile(destinationPath, parsedUpload.fileBuffer!);
+    await fs.writeFile(/* turbopackIgnore: true */ destinationPath, parsedUpload.fileBuffer!);
 
     const updatedProject = updateProject(project.id, {
       iconPath: destinationPath,

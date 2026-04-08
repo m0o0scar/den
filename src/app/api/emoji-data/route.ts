@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const EMOJI_DATA_PATH = path.join(
-  process.cwd(),
+  /* turbopackIgnore: true */ process.cwd(),
   'node_modules',
   'emoji-picker-element-data',
   'en',
@@ -13,7 +13,7 @@ const EMOJI_DATA_PATH = path.join(
 const ETAG = '"emoji-picker-element-data-en-emojibase"';
 
 async function readEmojiData(): Promise<string> {
-  return fs.readFile(EMOJI_DATA_PATH, 'utf8');
+  return fs.readFile(/* turbopackIgnore: true */ EMOJI_DATA_PATH, 'utf8');
 }
 
 function createHeaders() {

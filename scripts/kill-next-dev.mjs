@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 const APP_ROOT = process.cwd();
 const PORT_RANGE = '3200-3299';
 const dryRun = process.argv.includes('--dry-run');
@@ -75,6 +77,25 @@ function getProcessLabel(pid) {
   return (result.stdout ?? '').trim() || `pid ${pid}`;
 }
 
+function getLockedDevPid() {
+  try {
+    const lockPath = path.join(APP_ROOT, '.next', 'dev', 'lock');
+    const raw = fs.readFileSync(lockPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Number.isInteger(parsed?.pid) && parsed.pid > 0 ? parsed.pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function isLikelyRepoNextProcess(pid, label = getProcessLabel(pid)) {
+  if (!label) {
+    return false;
+  }
+
+  return label.includes(APP_ROOT) || label.includes('next/dist/bin/next');
+}
+
 function isRunning(pid) {
   try {
     process.kill(pid, 0);
@@ -109,12 +130,22 @@ async function terminatePid(pid) {
 }
 
 async function main() {
-  const pids = getListeningPids();
+  const listeningPids = getListeningPids();
+  const lockedPid = getLockedDevPid();
+  const pids = Array.from(new Set([
+    ...(lockedPid ? [lockedPid] : []),
+    ...listeningPids.filter((pid) => isLikelyRepoNextProcess(pid)),
+  ]));
+
   if (pids.length === 0) {
-    console.log(`No listening processes found on ${PORT_RANGE}`);
+    if (listeningPids.length === 0) {
+      console.log(`No listening processes found on ${PORT_RANGE}`);
+      return;
+    }
+
+    console.log(`No Next.js dev server found for ${APP_ROOT}`);
     return;
   }
-
   for (const pid of pids) {
     const label = getProcessLabel(pid);
     const ports = getListeningPortLabels(pid);

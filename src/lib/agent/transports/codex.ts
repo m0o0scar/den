@@ -195,7 +195,10 @@ export function getInstallCommandString() {
 
 async function readCodexConfiguredModel() {
   try {
-    const config = await readFile(path.join(os.homedir(), ".codex", "config.toml"), "utf8");
+    const config = await readFile(
+      path.join(/* turbopackIgnore: true */ os.homedir(), ".codex", "config.toml"),
+      "utf8",
+    );
     const match = config.match(/^\s*model\s*=\s*"([^"\n]+)"/m);
     return match?.[1]?.trim() || null;
   } catch {
@@ -472,7 +475,7 @@ class CodexAppServerConnection {
 }
 
 class CodexLoginSession {
-  private connection = new CodexAppServerConnection(process.cwd());
+  private connection = new CodexAppServerConnection(/* turbopackIgnore: true */ process.cwd());
   private completed = false;
   private expiresAt = Date.now() + 10 * 60 * 1000;
   private completion = createDeferred<void>();
@@ -572,7 +575,7 @@ async function withConnection<T>(
 }
 
 async function readAccount() {
-  return await withConnection(process.cwd(), async (connection) => {
+  return await withConnection(/* turbopackIgnore: true */ process.cwd(), async (connection) => {
     const result = (await connection.request("account/read", {})) as {
       account?: AgentAccount | null;
     };
@@ -737,7 +740,7 @@ export async function ensureCodexInstalled(
     const child = spawn(prepared.command, prepared.args, {
       env,
       stdio: ["ignore", "pipe", "pipe"],
-      cwd: process.cwd(),
+      cwd: /* turbopackIgnore: true */ process.cwd(),
       windowsVerbatimArguments: prepared.windowsVerbatimArguments,
     });
 

@@ -57,7 +57,7 @@ async function getValidCachedResolution(repoName: string): Promise<string | null
 
 async function isExistingDirectory(dirPath: string): Promise<boolean> {
   try {
-    const stats = await fs.stat(dirPath);
+    const stats = await fs.stat(/* turbopackIgnore: true */ dirPath);
     return stats.isDirectory();
   } catch {
     return false;
@@ -77,7 +77,7 @@ function shouldSkipDirectory(entryName: string, targetName: string): boolean {
 }
 
 async function findByNameWithinRoot(rootPath: string, repoName: string): Promise<string | null> {
-  const directCandidate = path.join(rootPath, repoName);
+  const directCandidate = path.join(/* turbopackIgnore: true */ rootPath, repoName);
   if (await isExistingDirectory(directCandidate)) {
     return directCandidate;
   }
@@ -95,7 +95,7 @@ async function findByNameWithinRoot(rootPath: string, repoName: string): Promise
 
     let entries: Dirent[];
     try {
-      entries = await fs.readdir(current.dirPath, { withFileTypes: true });
+      entries = await fs.readdir(/* turbopackIgnore: true */ current.dirPath, { withFileTypes: true });
     } catch {
       continue;
     }
@@ -104,7 +104,7 @@ async function findByNameWithinRoot(rootPath: string, repoName: string): Promise
       if (!entry.isDirectory()) continue;
       if (shouldSkipDirectory(entry.name, targetName)) continue;
 
-      const nextDirPath = path.join(current.dirPath, entry.name);
+      const nextDirPath = path.join(/* turbopackIgnore: true */ current.dirPath, entry.name);
 
       if (entry.name.toLowerCase() === targetName && await isExistingDirectory(nextDirPath)) {
         return nextDirPath;
@@ -144,7 +144,7 @@ export async function resolveRepositoryPathByName(repoName: string): Promise<str
   const searchRoots: string[] = [];
   const visitedRoots = new Set<string>();
   for (const repoPath of recentProjects) {
-    const parentPath = path.dirname(repoPath);
+    const parentPath = path.dirname(/* turbopackIgnore: true */ repoPath);
     if (!visitedRoots.has(parentPath)) {
       visitedRoots.add(parentPath);
       searchRoots.push(parentPath);

@@ -9,7 +9,7 @@ import { createKeytarLoader, type KeytarModule } from './keytar-loader.ts';
 import { readLocalState, updateLocalState } from './local-db.ts';
 
 const SERVICE_NAME = 'viba-git-credentials';
-const LEGACY_CREDENTIALS_PATH = path.join(os.homedir(), '.viba', 'credentials.json');
+const LEGACY_CREDENTIALS_PATH = path.join(/* turbopackIgnore: true */ os.homedir(), '.viba', 'credentials.json');
 
 export type CredentialType = 'github' | 'gitlab';
 
@@ -123,7 +123,7 @@ function parseLegacyCredentials(raw: unknown): CredentialLookupMetadata[] {
 
 async function readLegacyCredentials(): Promise<CredentialLookupMetadata[]> {
   try {
-    const raw = await fs.readFile(LEGACY_CREDENTIALS_PATH, 'utf8');
+    const raw = await fs.readFile(/* turbopackIgnore: true */ LEGACY_CREDENTIALS_PATH, 'utf8');
     return parseLegacyCredentials(JSON.parse(raw));
   } catch {
     return [];

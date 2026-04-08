@@ -56,7 +56,7 @@ function deriveProjectName(input: {
 }
 
 async function ensureDirectoryExists(folderPath: string): Promise<void> {
-  const stats = await fs.stat(folderPath);
+  const stats = await fs.stat(/* turbopackIgnore: true */ folderPath);
   if (!stats.isDirectory()) {
     throw new Error(`Folder is not a directory: ${folderPath}`);
   }
@@ -85,9 +85,9 @@ async function createProjectDefaultFolder(rawFolderName: string | undefined, pro
     throw new Error('New folder name cannot include path separators.');
   }
 
-  const createdFolderPath = path.join(defaultRootFolder, nextFolderName);
+  const createdFolderPath = path.join(/* turbopackIgnore: true */ defaultRootFolder, nextFolderName);
   try {
-    await fs.access(createdFolderPath);
+    await fs.access(/* turbopackIgnore: true */ createdFolderPath);
     throw new Error(`Folder already exists: ${createdFolderPath}`);
   } catch (error) {
     const code = typeof error === 'object' && error !== null && 'code' in error
@@ -98,7 +98,7 @@ async function createProjectDefaultFolder(rawFolderName: string | undefined, pro
     }
   }
 
-  await fs.mkdir(createdFolderPath, { recursive: false });
+  await fs.mkdir(/* turbopackIgnore: true */ createdFolderPath, { recursive: false });
   return createdFolderPath;
 }
 
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
     return NextResponse.json(project);
   } catch (error) {
     if (createdFolderPath) {
-      await fs.rm(createdFolderPath, { recursive: true, force: true }).catch(() => {
+      await fs.rm(/* turbopackIgnore: true */ createdFolderPath, { recursive: true, force: true }).catch(() => {
         // Ignore rollback failures.
       });
     }

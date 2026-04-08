@@ -1003,12 +1003,12 @@ function getWorkspaceRelativeRepoPath(
 }
 
 async function ensureWorkspaceParent(workspacePath: string): Promise<void> {
-  await fs.mkdir(path.dirname(workspacePath), { recursive: true });
+  await fs.mkdir(path.dirname(/* turbopackIgnore: true */ workspacePath), { recursive: true });
 }
 
 async function linkWorkspaceFolder(sourcePath: string, targetPath: string): Promise<void> {
-  await fs.mkdir(path.dirname(targetPath), { recursive: true });
-  await fs.symlink(sourcePath, targetPath, process.platform === 'win32' ? 'junction' : 'dir');
+  await fs.mkdir(path.dirname(/* turbopackIgnore: true */ targetPath), { recursive: true });
+  await fs.symlink(/* turbopackIgnore: true */ sourcePath, targetPath, process.platform === 'win32' ? 'junction' : 'dir');
 }
 
 async function createSingleRepoSession(
@@ -1052,7 +1052,7 @@ async function copyFolderWithoutGitRepos(
   destinationPath: string,
   gitRepoPaths: string[],
 ): Promise<void> {
-  await fs.mkdir(path.dirname(destinationPath), { recursive: true });
+  await fs.mkdir(path.dirname(/* turbopackIgnore: true */ destinationPath), { recursive: true });
   await copyProjectWithoutGitRepos(sourcePath, destinationPath, gitRepoPaths);
 }
 
@@ -1111,7 +1111,7 @@ async function createWorkspaceModeSession(
     await fs.rm(targetWorktreePath, { recursive: true, force: true }).catch(() => {
       // Ignore cleanup before worktree creation.
     });
-    await fs.mkdir(path.dirname(targetWorktreePath), { recursive: true });
+    await fs.mkdir(path.dirname(/* turbopackIgnore: true */ targetWorktreePath), { recursive: true });
 
     const baseBranch = context.baseBranch || await resolveDefaultBaseBranch(context.repoPath);
     const branchName = buildSessionBranchName(sessionName, context.repoPath);
@@ -1530,8 +1530,8 @@ async function cleanupWorkspaceRoot(
   workspacePath: string,
   workspaceMode: SessionWorkspaceMode,
 ): Promise<void> {
-  const sessionRootPath = path.dirname(workspacePath);
-  const managedProjectsRoot = path.join(os.homedir(), '.viba', 'projects');
+  const sessionRootPath = path.dirname(/* turbopackIgnore: true */ workspacePath);
+  const managedProjectsRoot = path.join(/* turbopackIgnore: true */ os.homedir(), '.viba', 'projects');
   if (workspaceMode === 'folder' || workspaceMode === 'local_source') {
     if (!sessionRootPath || !sessionRootPath.startsWith(managedProjectsRoot)) {
       return;
@@ -1540,7 +1540,7 @@ async function cleanupWorkspaceRoot(
 
   if (sessionRootPath && sessionRootPath.startsWith(managedProjectsRoot)) {
     try {
-      await fs.rm(sessionRootPath, { recursive: true, force: true });
+      await fs.rm(/* turbopackIgnore: true */ sessionRootPath, { recursive: true, force: true });
     } catch {
       // Ignore cleanup errors.
     }
@@ -1646,8 +1646,8 @@ async function sweepExpiredSessionWorkspacePreparations(): Promise<void> {
 }
 
 async function getSessionPromptsDir(): Promise<string> {
-  const promptsDir = path.join(os.homedir(), '.viba', 'session-prompts');
-  await fs.mkdir(promptsDir, { recursive: true });
+  const promptsDir = path.join(/* turbopackIgnore: true */ os.homedir(), '.viba', 'session-prompts');
+  await fs.mkdir(/* turbopackIgnore: true */ promptsDir, { recursive: true });
   return promptsDir;
 }
 
@@ -1716,8 +1716,8 @@ export async function writeSessionPromptFile(
 ): Promise<{ success: boolean; filePath?: string; error?: string }> {
   try {
     const promptsDir = await getSessionPromptsDir();
-    const filePath = path.join(promptsDir, `${sessionName}.txt`);
-    await fs.writeFile(filePath, prompt, 'utf-8');
+    const filePath = path.join(/* turbopackIgnore: true */ promptsDir, `${sessionName}.txt`);
+    await fs.writeFile(/* turbopackIgnore: true */ filePath, prompt, 'utf-8');
     return { success: true, filePath };
   } catch (e: unknown) {
     console.error('Failed to write session prompt file:', e);
