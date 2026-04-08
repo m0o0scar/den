@@ -113,6 +113,53 @@ describe('session hot store', () => {
     assert.match(walContents, /"itemId":"user-1"/);
   });
 
+  it('keeps only the latest pending WAL record for repeated updates to the same item', async () => {
+    localDbModule.updateLocalState((state) => {
+      state.sessions['session-1'] = createSessionRecord();
+    });
+
+    hotStoreModule.readRuntime('session-1');
+    hotStoreModule.queueHistoryUpserts('session-1', [{
+      kind: 'command',
+      id: 'command-1',
+      command: 'rg -n needle node_modules',
+      cwd: '/tmp/project',
+      output: 'first chunk',
+      status: 'running',
+      exitCode: null,
+      toolName: null,
+      toolInput: null,
+      ordinal: 0,
+      createdAt: '2026-04-06T10:00:00.000Z',
+      updatedAt: '2026-04-06T10:00:00.000Z',
+    }]);
+    hotStoreModule.queueHistoryUpserts('session-1', [{
+      kind: 'command',
+      id: 'command-1',
+      command: 'rg -n needle node_modules',
+      cwd: '/tmp/project',
+      output: 'first chunk\nsecond chunk',
+      status: 'running',
+      exitCode: null,
+      toolName: null,
+      toolInput: null,
+      ordinal: 0,
+      createdAt: '2026-04-06T10:00:00.000Z',
+      updatedAt: '2026-04-06T10:00:01.000Z',
+    }]);
+
+    hotStoreModule.flush('session-1');
+
+    const paths = hotStoreModule.getSessionHotStorePathsForTests('session-1');
+    const walContents = await readMaybeFile(paths.walPath);
+    const lines = walContents.trim().split('\n');
+    assert.equal(lines.length, 1);
+
+    const record = JSON.parse(lines[0]) as { payloadJson: string };
+    const payload = JSON.parse(record.payloadJson) as { output: string };
+    assert.equal(payload.output, 'first chunk\nsecond chunk');
+  });
+
   it('compacts the WAL into a snapshot file', async () => {
     localDbModule.updateLocalState((state) => {
       state.sessions['session-1'] = createSessionRecord();

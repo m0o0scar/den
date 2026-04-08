@@ -696,6 +696,19 @@ function scheduleFlush(sessionName: string): void {
   }, FLUSH_DEBOUNCE_MS);
 }
 
+function queuePendingWalRecord(
+  cache: SessionHotStoreCache,
+  nextRecord: PersistedHistoryRecord,
+): void {
+  const existingIndex = cache.pendingWalRecords.findIndex((record) => record.itemId === nextRecord.itemId);
+  if (existingIndex >= 0) {
+    cache.pendingWalRecords[existingIndex] = nextRecord;
+    return;
+  }
+
+  cache.pendingWalRecords.push(nextRecord);
+}
+
 function writeRuntime(cache: SessionHotStoreCache, paths: SessionHotStorePaths): void {
   if (!cache.runtime) {
     try {
@@ -887,7 +900,7 @@ export function queueHistoryUpserts(
     const existing = cache.historyById.get(write.itemId) ?? null;
     const nextRecord = createPersistedHistoryRecord(sessionName, write, existing);
     cache.historyById.set(write.itemId, nextRecord);
-    cache.pendingWalRecords.push(nextRecord);
+    queuePendingWalRecord(cache, nextRecord);
   }
 
   scheduleFlush(sessionName);
