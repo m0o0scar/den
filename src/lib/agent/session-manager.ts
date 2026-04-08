@@ -17,6 +17,7 @@ import {
   terminateManagedRuntimeProcesses,
   type ActiveSessionRun,
 } from '@/lib/agent/session-run-state';
+import { waitForCancelledSessionRunCleanup } from '@/lib/agent/session-cancel';
 import { resolveGitSessionEnvironments } from '@/lib/git-session-auth';
 import {
   flushSessionState,
@@ -977,9 +978,14 @@ export async function cancelSessionTurn(sessionId: string): Promise<{
     });
   }
 
+  // Wait for the aborted run to finish its cleanup so the next send
+  // does not trip the in-memory "turn already running" guard.
+  await waitForCancelledSessionRunCleanup(active.promise);
+
   return {
     success: true,
-    runtime: enrichSessionRuntimeWithDiagnostics(normalizedSessionId, runtime) ?? runtime,
+    runtime: enrichSessionRuntimeWithDiagnostics(normalizedSessionId, readSessionRuntime(normalizedSessionId))
+      ?? readSessionRuntime(normalizedSessionId),
   };
 }
 
