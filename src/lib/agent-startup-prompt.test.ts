@@ -196,14 +196,22 @@ describe('buildAgentStartupPrompt', () => {
     assert.match(prompt!, /do not kill the process holding port `3200`; that port belongs to the Den app hosting this session\./);
     assert.match(prompt!, /Start the project on another available port instead unless the user explicitly asks to reuse `3200`\./);
     assert.match(prompt!, /If you are not sure which dev server command or script to use, ask the user to provide the dev server script before proceeding\./);
-    assert.match(prompt!, /For visual UI tasks, prioritize Chrome remote-debug MCP tooling to attach to the user's current browser session/);
-    assert.match(prompt!, /If that is unavailable, fall back to the `agent-browser` skill/);
+    assert.match(prompt!, /For visual UI tasks in web projects, use the `\$agent-browser` skill/);
+    assert.match(prompt!, /invoke it as `npx agent-browser \.\.\.`/);
+    assert.match(prompt!, /Do not claim `agent-browser` is unavailable until you confirm that `npx` is missing or `npx agent-browser --help` fails\./);
+    assert.match(prompt!, /Use Chrome remote-debug MCP tooling only when attaching to the user's current browser session is specifically useful/);
+    assert.match(prompt!, /if attach fails because the browser profile or session is locked or unavailable, stop retrying and continue immediately with the standalone `\$agent-browser` path\./);
+    assert.match(prompt!, /If `\$agent-browser` cannot be used, fall back to `\$playwright` via the bundled wrapper script\./);
     assert.match(prompt!, /For bugfix\/debugging tasks, use the `systematic-debugging` skill/);
     assert.match(prompt!, /you may use `npx skills` to discover and install additional skills at your discretion/);
     assert.match(prompt!, /When a task is large or naturally splits into independent workstreams, break it down into smaller subtasks before implementation\./);
     assert.match(prompt!, /If the runtime supports delegation or subagents, use them for bounded, independent subtasks that can run in parallel/);
+    assert.match(prompt!, /verify the relevant page and capture screenshot\(s\) with `\$agent-browser` first using `npx agent-browser \.\.\.`/);
+    assert.match(prompt!, /If `\$agent-browser` cannot run because `npx` is unavailable or `npx agent-browser --help` fails, use `\$playwright` via the bundled wrapper script\./);
     assert.match(prompt!, /# Task\n\nFix the startup prompt$/m);
     assert.doesNotMatch(prompt!, /Attachments:/);
+    assert.doesNotMatch(prompt!, /prioritize Chrome remote-debug MCP tooling to attach to the user's current browser session/);
+    assert.doesNotMatch(prompt!, /use Chrome remote-debug MCP tooling first to test the relevant page and capture screenshot\(s\)/);
     assert.doesNotMatch(prompt!, /send a notification to the matching Palx session/i);
   });
 
@@ -241,6 +249,7 @@ describe('buildAgentStartupPrompt', () => {
     assert.match(prompt!, /When a task is large or naturally splits into independent workstreams, break it down into smaller subtasks before implementation\./);
     assert.match(prompt!, /If the runtime supports delegation or subagents, use them for bounded, independent subtasks that can run in parallel/);
     assert.match(prompt!, /Attachments:\n- \/tmp\/spec\.md/);
+    assert.doesNotMatch(prompt!, /prioritize Chrome remote-debug MCP tooling to attach to the user's current browser session/);
     assert.doesNotMatch(prompt!, /send a notification to the matching Palx session/i);
   });
 

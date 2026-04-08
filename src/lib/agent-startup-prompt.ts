@@ -8,7 +8,7 @@ const AUTO_COMMIT_INSTRUCTION =
 const DEV_SERVER_TESTING_INSTRUCTION =
   'For testing and debugging in web projects, start a fresh dev server before running checks, but do not kill the process holding port `3200`; that port belongs to the Den app hosting this session. Start the project on another available port instead unless the user explicitly asks to reuse `3200`. If you are not sure which dev server command or script to use, ask the user to provide the dev server script before proceeding.';
 const AGENT_BROWSER_SKILL_INSTRUCTION =
-  'For visual UI tasks, prioritize Chrome remote-debug MCP tooling to attach to the user\'s current browser session. If that is unavailable, fall back to the `agent-browser` skill (https://skills.sh/vercel-labs/agent-browser/agent-browser), which may run in a standalone browser session.';
+  'For visual UI tasks in web projects, use the `$agent-browser` skill (https://skills.sh/vercel-labs/agent-browser/agent-browser) first and invoke it as `npx agent-browser ...`. Do not claim `agent-browser` is unavailable until you confirm that `npx` is missing or `npx agent-browser --help` fails. Use Chrome remote-debug MCP tooling only when attaching to the user\'s current browser session is specifically useful; if attach fails because the browser profile or session is locked or unavailable, stop retrying and continue immediately with the standalone `$agent-browser` path. If `$agent-browser` cannot be used, fall back to `$playwright` via the bundled wrapper script.';
 const SYSTEMATIC_DEBUGGING_SKILL_INSTRUCTION =
   'For bugfix/debugging tasks, use the `systematic-debugging` skill (https://github.com/obra/superpowers).';
 const OPTIONAL_SKILL_DISCOVERY_INSTRUCTION =
@@ -16,7 +16,7 @@ const OPTIONAL_SKILL_DISCOVERY_INSTRUCTION =
 const TASK_BREAKDOWN_INSTRUCTION =
   'When a task is large or naturally splits into independent workstreams, break it down into smaller subtasks before implementation. If the runtime supports delegation or subagents, use them for bounded, independent subtasks that can run in parallel when that improves throughput or keeps the critical path moving.';
 const VISUAL_EVIDENCE_INSTRUCTION =
-  'When working on a visual-related feature or bugfix in a web project, after coding is complete, use Chrome remote-debug MCP tooling first to test the relevant page and capture screenshot(s) in the user\'s current browser session. If the current session is unavailable, fall back to `agent-browser` or another standalone browser automation option. Do not commit evidence files to the repository; upload them as pull or merge request attachments or comments via GitHub or GitLab APIs.';
+  'When working on a visual-related feature or bugfix in a web project, after coding is complete, verify the relevant page and capture screenshot(s) with `$agent-browser` first using `npx agent-browser ...`. Use Chrome remote-debug MCP tooling only when attaching to the user\'s current browser session is specifically useful; if attach fails because the session or browser profile is locked or unavailable, fail fast and continue with the standalone path instead of retrying. If `$agent-browser` cannot run because `npx` is unavailable or `npx agent-browser --help` fails, use `$playwright` via the bundled wrapper script. Do not commit evidence files to the repository; upload them as pull or merge request attachments or comments via GitHub or GitLab APIs.';
 
 export type BuildAgentStartupPromptOptions = {
   taskDescription?: string | null;
