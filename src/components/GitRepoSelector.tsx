@@ -2125,6 +2125,15 @@ export default function GitRepoSelector({
     }
   };
 
+  const handleDeleteProjectRequest = async (repo: string) => {
+    dismissRepoSettingsDialog();
+    if (!config) return;
+    const currentRecentProjects = config.recentProjects ?? config.recentRepos;
+    const newRecent = currentRecentProjects.filter((project) => project !== repo);
+    const newConfig = await updateConfig({ recentProjects: newRecent });
+    setConfig(newConfig);
+  };
+
   const handleOpenRepoSettings = async (e: React.MouseEvent, repo: string) => {
     e.stopPropagation();
     await ensureProjectRegistered(repo);
@@ -3404,6 +3413,10 @@ export default function GitRepoSelector({
           }}
           onRemoveIcon={() => {
             void handleRemoveProjectIcon();
+          }}
+          onDeleteProject={() => {
+            if (!repoForSettings) return;
+            void handleDeleteProjectRequest(repoForSettings);
           }}
           onClose={dismissRepoSettingsDialog}
           onSave={() => {

@@ -972,6 +972,17 @@ export default function HomeDashboardContainer({
     setProjectPendingDeleteId(resolvedProject.project.id);
   }, [isDeletingProject, resolveProjectEntry]);
 
+  const handleDeleteProjectRequest = useCallback((projectReference: string) => {
+    if (isDeletingProject) return;
+    const resolvedProject = resolveProjectEntry(projectReference);
+    if (!resolvedProject.project) {
+      setError('Project not found.');
+      return;
+    }
+    dismissRepoSettingsDialog();
+    setProjectPendingDeleteId(resolvedProject.project.id);
+  }, [dismissRepoSettingsDialog, isDeletingProject, resolveProjectEntry]);
+
   const handleDeleteProjectConfirm = useCallback(async () => {
     if (!projectPendingDeleteId || !config || isDeletingProject) return;
 
@@ -1683,6 +1694,10 @@ export default function HomeDashboardContainer({
         }}
         onRemoveIcon={() => {
           void handleRemoveProjectIcon();
+        }}
+        onDeleteProject={() => {
+          if (!projectForSettingsId) return;
+          handleDeleteProjectRequest(projectForSettingsId);
         }}
         onClose={dismissRepoSettingsDialog}
         onSave={() => {

@@ -7,7 +7,6 @@ import {
   Settings,
   BookOpen,
   Square,
-  X,
   GitBranch as GitBranchIcon,
 } from 'lucide-react';
 import {
@@ -129,14 +128,12 @@ export function HomeRepoCard({
   onOpenProjectServiceLog,
   onOpenProjectSettings,
   onOpenProjectMemory,
-  onRemoveRecent,
   onProjectIconError,
 }: HomeRepoCardProps) {
   const projectName = projectDisplayName || getBaseName(project);
   const secondaryLabel = projectSecondaryLabel || project;
   const cardGradient = getStableRepoCardGradient(normalizePathForComparison(project));
   const actionButtonClass = 'app-ui-icon-button';
-  const destructiveActionButtonClass = 'app-ui-icon-button app-ui-icon-button-danger';
   const menuItemClass =
     'flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-300 dark:hover:bg-[#30363d]/70';
   const [isGitRepoMenuOpen, setIsGitRepoMenuOpen] = useState(false);
@@ -439,14 +436,6 @@ export function HomeRepoCard({
                 title="Project settings"
               >
                 <Settings className="h-[18px] w-[18px]" />
-              </button>
-              <button
-                type="button"
-                onClick={(event) => onRemoveRecent(event, project)}
-                className={destructiveActionButtonClass}
-                title="Delete project"
-              >
-                <X className="h-[18px] w-[18px]" />
               </button>
             </div>
           </div>

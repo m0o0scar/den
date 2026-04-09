@@ -49,6 +49,7 @@ export type RepoSettingsDialogProps = {
   onUploadIcon: (iconPath: string) => void;
   onChooseEmoji: (iconEmoji: string) => void;
   onRemoveIcon: () => void;
+  onDeleteProject?: () => void | Promise<void>;
   onClose: () => void;
   onSave: () => void;
 };
@@ -83,6 +84,7 @@ export function RepoSettingsDialog({
   onUploadIcon,
   onChooseEmoji,
   onRemoveIcon,
+  onDeleteProject,
   onClose,
   onSave,
 }: RepoSettingsDialogProps) {
@@ -325,21 +327,38 @@ export function RepoSettingsDialog({
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4 md:px-6 dark:border-[color:var(--app-dark-border-subtle)]">
-            <button
-              className="app-ui-button"
-              onClick={onClose}
-              disabled={isSavingProjectSettings || isUploadingProjectIcon}
-            >
-              Cancel
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={onSave}
-              disabled={isSavingProjectSettings || isUploadingProjectIcon}
-            >
-              Save
-            </button>
+          <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-4 md:px-6 dark:border-[color:var(--app-dark-border-subtle)]">
+            <div>
+              {onDeleteProject ? (
+                <button
+                  type="button"
+                  className="app-ui-button app-ui-button-danger"
+                  onClick={() => {
+                    void onDeleteProject();
+                  }}
+                  disabled={isSavingProjectSettings || isUploadingProjectIcon}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete Project
+                </button>
+              ) : null}
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                className="app-ui-button"
+                onClick={onClose}
+                disabled={isSavingProjectSettings || isUploadingProjectIcon}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={onSave}
+                disabled={isSavingProjectSettings || isUploadingProjectIcon}
+              >
+                Save
+              </button>
+            </div>
           </div>
         </div>
       </div>
