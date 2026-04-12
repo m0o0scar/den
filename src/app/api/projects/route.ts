@@ -3,6 +3,7 @@ import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { findProjectByFolderPath, getDefaultRootFolder, getProjectById, getProjects, addProject, removeProject, updateProject } from '@/lib/store';
+import { formatProjectNameFromFolderName } from '@/lib/path';
 import { normalizeProjectFolderPath, normalizeProjectFolderPaths, validateProjectFolderAssociations } from '@/lib/project-folders';
 
 export const dynamic = 'force-dynamic';
@@ -49,7 +50,7 @@ function deriveProjectName(input: {
 
   const defaultFolderSource = input.createdFolderPath ?? input.folderPaths[0];
   if (defaultFolderSource) {
-    return path.basename(defaultFolderSource);
+    return formatProjectNameFromFolderName(defaultFolderSource);
   }
 
   throw new Error('Project name is required.');

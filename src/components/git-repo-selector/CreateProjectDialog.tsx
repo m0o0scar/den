@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, CloudDownload, FolderCog, Plus, Trash2, X } from 'lucide-react';
 import { checkDirectoryAccessible } from '@/app/actions/git';
 import FileBrowser from '@/components/FileBrowser';
-import { getBaseName } from '@/lib/path';
+import { formatProjectNameFromFolderName } from '@/lib/path';
 import { useDialogKeyboardShortcuts } from '@/hooks/useDialogKeyboardShortcuts';
 
 type CreateProjectDialogSubmit = {
@@ -111,7 +111,7 @@ export function CreateProjectDialog({
     });
 
     if (!hasEditedProjectName && !trimmedProjectName) {
-      const fallbackName = getBaseName(trimmedPath);
+      const fallbackName = formatProjectNameFromFolderName(trimmedPath);
       if (fallbackName) {
         setProjectName(fallbackName);
       }

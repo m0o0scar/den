@@ -101,3 +101,18 @@ export function getBaseName(value: string): string {
 export function getDirName(value: string): string {
   return getFsDirName(value);
 }
+
+export function formatProjectNameFromFolderName(value: string | null | undefined): string {
+  const baseName = getFsBaseName(value);
+  if (!baseName || baseName === '.' || baseName === '..') {
+    return baseName;
+  }
+
+  return baseName
+    .replace(/[-_/]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((segment) => (segment[0] ? segment[0].toUpperCase() + segment.slice(1) : ''))
+    .join(' ');
+}

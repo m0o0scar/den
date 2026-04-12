@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { getBaseName, getDirName, getFsBaseName, getFsDirName, normalizeFsPathForDisplay } from './path.ts';
+import { formatProjectNameFromFolderName, getBaseName, getDirName, getFsBaseName, getFsDirName, normalizeFsPathForDisplay } from './path.ts';
 
 describe('getBaseName', () => {
   it('should return the filename from a POSIX path', () => {
@@ -106,5 +106,21 @@ describe('explicit filesystem helpers', () => {
   it('exposes fs helpers directly', () => {
     assert.strictEqual(getFsBaseName('C:\\repo\\file.ts'), 'file.ts');
     assert.strictEqual(getFsDirName('/repo/file.ts'), '/repo');
+  });
+});
+
+describe('formatProjectNameFromFolderName', () => {
+  it('replaces separators with spaces and capitalizes each word', () => {
+    assert.strictEqual(formatProjectNameFromFolderName('oh-auth'), 'Oh Auth');
+    assert.strictEqual(formatProjectNameFromFolderName('oh_auth'), 'Oh Auth');
+  });
+
+  it('formats the basename when given a full path', () => {
+    assert.strictEqual(formatProjectNameFromFolderName('/tmp/my-new_project'), 'My New Project');
+    assert.strictEqual(formatProjectNameFromFolderName('C:\\tmp\\my-new_project'), 'My New Project');
+  });
+
+  it('collapses repeated separators and trims whitespace', () => {
+    assert.strictEqual(formatProjectNameFromFolderName('  my---new___project  '), 'My New Project');
   });
 });
