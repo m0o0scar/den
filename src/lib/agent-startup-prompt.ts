@@ -1,4 +1,8 @@
-import type { SessionGitRepoContext, SessionWorkspaceFolder, SessionWorkspaceMode } from './types.ts';
+import type {
+  SessionGitRepoContext,
+  SessionWorkspaceFolder,
+  SessionWorkspaceMode,
+} from './types.ts';
 import type { MemoryFileInfo } from './memory.ts';
 
 const PLAN_MODE_STARTUP_INSTRUCTION =
@@ -8,15 +12,15 @@ const AUTO_COMMIT_INSTRUCTION =
 const DEV_SERVER_TESTING_INSTRUCTION =
   'For testing and debugging in web projects, start a fresh dev server before running checks, but do not kill the process holding port `3200`; that port belongs to the Den app hosting this session. Start the project on another available port instead unless the user explicitly asks to reuse `3200`. If you are not sure which dev server command or script to use, ask the user to provide the dev server script before proceeding.';
 const AGENT_BROWSER_SKILL_INSTRUCTION =
-  'For visual UI tasks in web projects, use the `$agent-browser` skill (https://skills.sh/vercel-labs/agent-browser/agent-browser) first and invoke it as `npx agent-browser ...`. Do not claim `agent-browser` is unavailable until you confirm that `npx` is missing or `npx agent-browser --help` fails. Use Chrome remote-debug MCP tooling only when attaching to the user\'s current browser session is specifically useful; if attach fails because the browser profile or session is locked or unavailable, stop retrying and continue immediately with the standalone `$agent-browser` path. If `$agent-browser` cannot be used, fall back to `$playwright` via the bundled wrapper script.';
+  "For visual UI tasks in web projects, use the `$agent-browser` skill (https://skills.sh/vercel-labs/agent-browser/agent-browser) first and invoke it as `npx agent-browser ...`. Do not claim `agent-browser` is unavailable until you confirm that `npx` is missing or `npx agent-browser --help` fails. If `$agent-browser` cannot be used, fall back to `$playwright` via the bundled wrapper script.";
 const SYSTEMATIC_DEBUGGING_SKILL_INSTRUCTION =
-  'For bugfix/debugging tasks, use the `systematic-debugging` skill (https://github.com/obra/superpowers).';
+  'For bugfix/debugging tasks, use the `$systematic-debugging` skill (https://github.com/obra/superpowers).';
 const OPTIONAL_SKILL_DISCOVERY_INSTRUCTION =
   'If this task would benefit from another specialized workflow, you may use `npx skills` to discover and install additional skills at your discretion. Prefer trusted sources, install only what is needed, read the installed `SKILL.md` before using it, and avoid unnecessary overlapping skills.';
 const TASK_BREAKDOWN_INSTRUCTION =
   'When a task is large or naturally splits into independent workstreams, break it down into smaller subtasks before implementation. If the runtime supports delegation or subagents, use them for bounded, independent subtasks that can run in parallel when that improves throughput or keeps the critical path moving.';
 const VISUAL_EVIDENCE_INSTRUCTION =
-  'When working on a visual-related feature or bugfix in a web project, after coding is complete, verify the relevant page and capture screenshot(s) with `$agent-browser` first using `npx agent-browser ...`. Use Chrome remote-debug MCP tooling only when attaching to the user\'s current browser session is specifically useful; if attach fails because the session or browser profile is locked or unavailable, fail fast and continue with the standalone path instead of retrying. If `$agent-browser` cannot run because `npx` is unavailable or `npx agent-browser --help` fails, use `$playwright` via the bundled wrapper script. Do not commit evidence files to the repository; upload them as pull or merge request attachments or comments via GitHub or GitLab APIs.';
+  "When working on a visual-related feature or bugfix in a web project, after coding is complete, verify the relevant page and capture screenshot(s) with `$agent-browser` first using `npx agent-browser ...`. If `$agent-browser` cannot run because `npx` is unavailable or `npx agent-browser --help` fails, use `$playwright` via the bundled wrapper script. Do not commit evidence files to the repository; upload them as pull or merge request attachments or comments via GitHub or GitLab APIs.";
 
 export type BuildAgentStartupPromptOptions = {
   taskDescription?: string | null;
@@ -36,7 +40,9 @@ function normalizeRepoPath(value: string | null | undefined): string {
 }
 
 function uniqueRepoPaths(paths: string[]): string[] {
-  return Array.from(new Set(paths.map((path) => normalizeRepoPath(path)).filter(Boolean))).sort((a, b) => {
+  return Array.from(
+    new Set(paths.map((path) => normalizeRepoPath(path)).filter(Boolean)),
+  ).sort((a, b) => {
     if (a === b) return 0;
     if (a === '.') return -1;
     if (b === '.') return 1;
@@ -57,7 +63,9 @@ function getKnownRepoPaths(
   return uniqueRepoPaths((gitRepos || []).map((repo) => repo.relativeRepoPath));
 }
 
-function formatWorkspaceFolderProvisioning(provisioning: SessionWorkspaceFolder['provisioning']): string {
+function formatWorkspaceFolderProvisioning(
+  provisioning: SessionWorkspaceFolder['provisioning'],
+): string {
   switch (provisioning) {
     case 'direct':
       return 'direct source folder';
@@ -78,11 +86,14 @@ export function buildWorkspaceInstructionLines(
     return [];
   }
 
-  const normalizedWorkspaceFolders = [...workspaceFolders].sort((left, right) => (
-    left.workspaceRelativePath.localeCompare(right.workspaceRelativePath)
-  ));
+  const normalizedWorkspaceFolders = [...workspaceFolders].sort((left, right) =>
+    left.workspaceRelativePath.localeCompare(right.workspaceRelativePath),
+  );
 
-  if (normalizedWorkspaceFolders.length === 1 && normalizedWorkspaceFolders[0]?.workspaceRelativePath === '.') {
+  if (
+    normalizedWorkspaceFolders.length === 1 &&
+    normalizedWorkspaceFolders[0]?.workspaceRelativePath === '.'
+  ) {
     const onlyFolder = normalizedWorkspaceFolders[0];
     return [
       `Workspace layout: your shell starts in \`.\`, which maps to \`${onlyFolder.sourcePath}\` as a ${formatWorkspaceFolderProvisioning(onlyFolder.provisioning)}.`,
@@ -91,13 +102,16 @@ export function buildWorkspaceInstructionLines(
 
   return [
     `Workspace layout: your shell starts at the workspace root in ${workspaceMode} mode with ${normalizedWorkspaceFolders.length} mapped entries.`,
-    ...normalizedWorkspaceFolders.map((workspaceFolder) => (
-      `Workspace entry \`${workspaceFolder.workspaceRelativePath}\`: \`${workspaceFolder.sourcePath}\` (${formatWorkspaceFolderProvisioning(workspaceFolder.provisioning)}).`
-    )),
+    ...normalizedWorkspaceFolders.map(
+      (workspaceFolder) =>
+        `Workspace entry \`${workspaceFolder.workspaceRelativePath}\`: \`${workspaceFolder.sourcePath}\` (${formatWorkspaceFolderProvisioning(workspaceFolder.provisioning)}).`,
+    ),
   ];
 }
 
-export function hasStartupTaskDescription(taskDescription?: string | null): boolean {
+export function hasStartupTaskDescription(
+  taskDescription?: string | null,
+): boolean {
   return Boolean(taskDescription?.trim());
 }
 
@@ -139,14 +153,17 @@ export function buildProjectGitInstructionLines(
   }
 
   if (workspaceMode === 'local_source') {
-    const repoSummary = repoPaths.length === 1
-      ? `this project contains one Git repository at ${formatRepoPaths(repoPaths)}.`
-      : `this project contains ${repoPaths.length} Git repositories at ${formatRepoPaths(repoPaths)}.`;
+    const repoSummary =
+      repoPaths.length === 1
+        ? `this project contains one Git repository at ${formatRepoPaths(repoPaths)}.`
+        : `this project contains ${repoPaths.length} Git repositories at ${formatRepoPaths(repoPaths)}.`;
     return [
       `Git context: ${repoSummary}`,
       'Your shell starts at the selected project source folder. Changes apply directly to that source checkout, so run Git commands in the matching repository path and use extra care with destructive operations.',
       ...(repoPaths.length > 1 || !repoPaths.includes('.')
-        ? ['If your changes span multiple repositories, handle commits, pushes, and pull or merge requests separately for each repository.']
+        ? [
+            'If your changes span multiple repositories, handle commits, pushes, and pull or merge requests separately for each repository.',
+          ]
         : []),
     ];
   }
@@ -155,7 +172,9 @@ export function buildProjectGitInstructionLines(
     `Git context: this project contains ${repoPaths.length} Git repositories at ${formatRepoPaths(repoPaths)}.`,
     'Your shell starts at the project root. Before any Git command, `cd` into the repository you are working in; do not assume the project root is itself a Git repository unless `.` is listed.',
     ...(repoPaths.length > 1
-      ? ['If your changes span multiple repositories, handle commits, pushes, and pull or merge requests separately for each repository.']
+      ? [
+          'If your changes span multiple repositories, handle commits, pushes, and pull or merge requests separately for each repository.',
+        ]
       : []),
   ];
 }
@@ -178,29 +197,41 @@ export function buildAgentStartupPrompt({
   const normalizedAttachmentPaths = Array.from(
     new Set(attachmentPaths.map((entry) => entry.trim()).filter(Boolean)),
   );
-  const normalizedMemoryFiles = Array.from(new Map<string, MemoryFileInfo>(
-    memoryFiles
-      .map((entry) => {
-        const normalizedPath = entry.path.trim();
-        if (!normalizedPath) return null;
-        return [
-          normalizedPath,
-          {
-            ...entry,
-            path: normalizedPath,
-            label: entry.label.trim() || 'Memory',
-          },
-        ] as const;
-      })
-      .filter((entry): entry is readonly [string, MemoryFileInfo] => Boolean(entry)),
-  ).values());
+  const normalizedMemoryFiles = Array.from(
+    new Map<string, MemoryFileInfo>(
+      memoryFiles
+        .map((entry) => {
+          const normalizedPath = entry.path.trim();
+          if (!normalizedPath) return null;
+          return [
+            normalizedPath,
+            {
+              ...entry,
+              path: normalizedPath,
+              label: entry.label.trim() || 'Memory',
+            },
+          ] as const;
+        })
+        .filter((entry): entry is readonly [string, MemoryFileInfo] =>
+          Boolean(entry),
+        ),
+    ).values(),
+  );
 
   const instructionLines: string[] = [];
   if (sessionMode === 'plan') {
     instructionLines.push(PLAN_MODE_STARTUP_INSTRUCTION);
   }
-  instructionLines.push(...buildWorkspaceInstructionLines(workspaceMode, workspaceFolders));
-  instructionLines.push(...buildProjectGitInstructionLines(workspaceMode, gitRepos, discoveredRepoRelativePaths));
+  instructionLines.push(
+    ...buildWorkspaceInstructionLines(workspaceMode, workspaceFolders),
+  );
+  instructionLines.push(
+    ...buildProjectGitInstructionLines(
+      workspaceMode,
+      gitRepos,
+      discoveredRepoRelativePaths,
+    ),
+  );
   instructionLines.push(AUTO_COMMIT_INSTRUCTION);
   instructionLines.push(DEV_SERVER_TESTING_INSTRUCTION);
   instructionLines.push(AGENT_BROWSER_SKILL_INSTRUCTION);
@@ -209,7 +240,9 @@ export function buildAgentStartupPrompt({
   instructionLines.push(TASK_BREAKDOWN_INSTRUCTION);
   instructionLines.push(VISUAL_EVIDENCE_INSTRUCTION);
   if (normalizedMemoryFiles.length > 0) {
-    instructionLines.push('Relevant memory files are available in local markdown files. Read them before substantial work when relevant, and update them only with durable, high-value notes that will help future tasks.');
+    instructionLines.push(
+      'Relevant memory files are available in local markdown files. Read them before substantial work when relevant, and update them only with durable, high-value notes that will help future tasks.',
+    );
     for (const memoryFile of normalizedMemoryFiles) {
       instructionLines.push(`${memoryFile.label}: \`${memoryFile.path}\``);
     }
@@ -217,10 +250,14 @@ export function buildAgentStartupPrompt({
 
   const taskSections: string[] = [trimmedTaskDescription];
   if (normalizedAttachmentPaths.length > 0) {
-    taskSections.push([
-      'Attachments:',
-      ...normalizedAttachmentPaths.map((attachmentPath) => `- ${attachmentPath}`),
-    ].join('\n'));
+    taskSections.push(
+      [
+        'Attachments:',
+        ...normalizedAttachmentPaths.map(
+          (attachmentPath) => `- ${attachmentPath}`,
+        ),
+      ].join('\n'),
+    );
   }
 
   return [
